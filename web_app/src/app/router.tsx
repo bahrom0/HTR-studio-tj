@@ -5,8 +5,6 @@ import { AppShell } from '@app/shell/AppShell';
 import { RouteError } from '@app/shell/RouteError';
 import { AccessGuard } from '@shared/access/AccessGuard';
 import { LoadingState } from '@shared/ui';
-
-const AccessRoute = lazy(() => import('@routes/access/AccessRoute'));
 const LandingRoute = lazy(() => import('@routes/landing/LandingRoute'));
 const HomeRoute = lazy(() => import('@routes/home/HomeRoute'));
 const OfflineRoute = lazy(() => import('@routes/offline/OfflineRoute'));
