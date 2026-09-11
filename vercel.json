@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "installCommand": "cd new_front && bun install --frozen-lockfile",
-  "buildCommand": "cd new_front && bun run build",
-  "outputDirectory": "new_front/dist",
+  "installCommand": "cd web_app && npm install",
+  "buildCommand": "cd web_app && npm run build",
+  "outputDirectory": "web_app/dist",
   "functions": {
     "api/index.mjs": {
       "maxDuration": 300
