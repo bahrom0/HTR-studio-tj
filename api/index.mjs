@@ -73,10 +73,21 @@ const listDocuments = async (request, response) => {
   if (!upstream.ok) {
     const errText = await upstream.text();
     console.error('Supabase listDocuments error:', errText);
-    return json(response, 200, []);
+    return json(response, 200, { items: [] });
   }
   const documents = await upstream.json();
-  json(response, 200, Array.isArray(documents) ? documents : []);
+  const items = Array.isArray(documents)
+    ? documents.map(d => ({
+        id: d.id,
+        title: d.title || 'Безымянный документ',
+        status: d.status || 'draft',
+        revision: Number(d.revision || 1),
+        page_count: Number(d.page_count || 1),
+        created_at: d.created_at || new Date().toISOString(),
+        updated_at: d.updated_at || new Date().toISOString(),
+      }))
+    : [];
+  json(response, 200, { items });
 };
 
 const getDocument = async (request, response, documentId) => {
@@ -275,17 +286,39 @@ export default async function handler(request, response) {
   const requestUrl = new URL(request.url, 'https://vercel.local');
   const path = `/${requestUrl.searchParams.get('path') || ''}`.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
   try {
-    if (request.method === 'GET' && path === '/v1/health') {
+    if (request.method === 'GET' && (path === '/v1/health' || path === '/v1/health/live')) {
       return json(response, 200, {
         status: 'ok',
+        request_id: randomUUID(),
         runtime: 'vercel-node',
         database: 'supabase-postgresql',
         storage: 'supabase-storage',
         ocr: 'gemini',
       });
     }
+    if (request.method === 'GET' && path === '/v1/access/session') {
+      const session = getSessionId(request);
+      const validUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(session)
+        ? session
+        : randomUUID();
+      return json(response, 200, {
+        authenticated: true,
+        expires_at: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+        csrf_token: 'csrf-anon',
+        user: {
+          id: validUuid,
+          email: 'user@tajik-htr.local',
+          name: 'Пользователь',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      });
+    }
+    if (request.method === 'POST' && path === '/v1/access/csrf') {
+      return json(response, 200, { csrf_token: 'csrf-anon' });
+    }
     if (request.method === 'GET' && path === '/v1/documents') return await listDocuments(request, response);
-    if (request.method === 'POST' && path === '/v1/documents/upload') return await upload(request, response);
+    if (request.method === 'POST' && (path === '/v1/documents' || path === '/v1/documents/upload')) return await upload(request, response);
     if (request.method === 'GET' && path === '/v1/assets') return await asset(requestUrl, response);
     
     const docMatch = path.match(/^\/v1\/documents\/([^/]+)$/);
