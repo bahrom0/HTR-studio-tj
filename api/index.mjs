@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import sharp from 'sharp';
 
 const json = (response, status, value) => {
   response.statusCode = status;
@@ -124,6 +125,319 @@ const getImageDimensions = (buffer) => {
   return { width: 1920, height: 1080 };
 };
 
+const getOcrModel = () => process.env.HTR_OCR_MODEL || process.env.HTR_GEMINI_MODEL || 'google/gemini-2.5-flash';
+
+const openRouterContent = (completion) => {
+  const content = completion?.choices?.[0]?.message?.content;
+  if (Array.isArray(content)) {
+    return content.map((part) => typeof part === 'string' ? part : part?.text || '').join('');
+  }
+  return typeof content === 'string' ? content : '';
+};
+
+const parseModelJson = (content) => {
+  const source = String(content || '')
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '');
+  const start = source.indexOf('{');
+  const end = source.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    throw Object.assign(new Error('Gemini не вернул JSON с координатами строк.'), { status: 502, retryable: true });
+  }
+  try {
+    return JSON.parse(source.slice(start, end + 1));
+  } catch (error) {
+    throw Object.assign(new Error('Gemini вернул некорректный JSON.'), { status: 502, retryable: true, cause: error });
+  }
+};
+
+const openRouterCompletion = async ({ apiKey, model, prompt, images }) => {
+  const content = [{ type: 'text', text: prompt }];
+  for (const image of images) {
+    if (image.label) content.push({ type: 'text', text: image.label });
+    content.push({
+      type: 'image_url',
+      image_url: { url: `data:image/png;base64,${image.bytes.toString('base64')}` },
+    });
+  }
+
+  const ai = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : 'https://vercel.app',
+      'X-Title': 'Tajik HTR Studio',
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      messages: [{ role: 'user', content }],
+    }),
+  });
+
+  if (!ai.ok) {
+    throw Object.assign(new Error(`OpenRouter Gemini: ${await ai.text()}`), { status: 502, retryable: true });
+  }
+  return ai.json();
+};
+
+const normalizePageImage = async (bytes) => {
+  try {
+    const configuredMaxEdge = Number(process.env.HTR_PAGE_MAX_EDGE || 2000);
+    const maxEdge = Number.isFinite(configuredMaxEdge) ? Math.min(4000, Math.max(256, Math.floor(configuredMaxEdge))) : 2000;
+    const { data, info } = await sharp(bytes)
+      .rotate()
+      .resize({ width: maxEdge, height: maxEdge, fit: 'inside', withoutEnlargement: true })
+      .png()
+      .toBuffer({ resolveWithObject: true });
+    const width = Number(info.width || 0);
+    const height = Number(info.height || 0);
+    if (width < 2 || height < 2) throw new Error('image_too_small');
+    return { bytes: data, width, height };
+  } catch (error) {
+    throw Object.assign(new Error('Не удалось подготовить изображение страницы.'), { status: 422, cause: error });
+  }
+};
+
+const detectPageLineBoxes = async (config, page) => {
+  const completion = await openRouterCompletion({
+    apiKey: config.openrouterKey,
+    model: getOcrModel(),
+    prompt: [
+      'Find every visible handwritten or printed Tajik Cyrillic text line on this page.',
+      'Return one tight axis-aligned box per physical text line, in natural top-to-bottom reading order.',
+      'Do not merge several lines into one box. Ignore page borders, grid lines, shadows, and decorations.',
+      'Coordinates must be integers normalized to 0..1000 in the exact order [ymin, xmin, ymax, xmax].',
+      'Return JSON only in this exact shape: {"lines":[{"index":0,"box_2d":[ymin,xmin,ymax,xmax]}]}.'
+    ].join(' '),
+    images: [{ bytes: page.bytes, label: 'page_image' }],
+  });
+  const decoded = parseModelJson(openRouterContent(completion));
+  const rawLines = Array.isArray(decoded?.lines)
+    ? decoded.lines
+    : Array.isArray(decoded?.regions)
+      ? decoded.regions
+      : null;
+  if (!rawLines || rawLines.length === 0 || rawLines.length > 120) {
+    throw Object.assign(new Error('Gemini не выделил строки на странице.'), { status: 502, retryable: true });
+  }
+
+  const lines = rawLines.map((line, fallbackIndex) => {
+    const rawBox = line?.box_2d || line?.box || line?.bbox;
+    const box = Array.isArray(rawBox) ? rawBox.map(Number) : [];
+    if (
+      box.length !== 4
+      || !box.every((value) => Number.isFinite(value) && Number.isInteger(value) && value >= 0 && value <= 1000)
+      || box[0] >= box[2]
+      || box[1] >= box[3]
+    ) {
+      throw Object.assign(new Error('Gemini вернул некорректные координаты строки.'), { status: 502, retryable: true });
+    }
+    const area = ((box[2] - box[0]) / 1000) * ((box[3] - box[1]) / 1000);
+    if (area > 0.75) {
+      throw Object.assign(new Error('Gemini вернул слишком большой бокс вместо строки.'), { status: 502, retryable: true });
+    }
+    return {
+      index: Number.isInteger(line?.index) ? line.index : fallbackIndex,
+      box,
+    };
+  });
+
+  return lines
+    .sort((left, right) => left.index - right.index)
+    .map((line, index) => ({ ...line, index }));
+};
+
+const getLineCropPadding = () => {
+  const configuredPadding = Number(process.env.HTR_LINE_CROP_PADDING || 0.08);
+  return Number.isFinite(configuredPadding) ? Math.min(0.25, Math.max(0, configuredPadding)) : 0.08;
+};
+
+const cropPageLines = async (page, lineBoxes) => {
+  const padding = getLineCropPadding();
+  const crops = [];
+  for (const line of lineBoxes) {
+    const [top, left, bottom, right] = line.box;
+    const padX = (right - left) * padding;
+    const padY = (bottom - top) * padding;
+    const pixelLeft = Math.max(0, Math.floor(((left - padX) / 1000) * page.width));
+    const pixelTop = Math.max(0, Math.floor(((top - padY) / 1000) * page.height));
+    const pixelRight = Math.min(page.width, Math.ceil(((right + padX) / 1000) * page.width));
+    const pixelBottom = Math.min(page.height, Math.ceil(((bottom + padY) / 1000) * page.height));
+    const width = pixelRight - pixelLeft;
+    const height = pixelBottom - pixelTop;
+    if (width < 2 || height < 2) {
+      throw Object.assign(new Error('Одна из найденных строк слишком мала для кропа.'), { status: 422 });
+    }
+
+    const { data, info } = await sharp(page.bytes)
+      .extract({ left: pixelLeft, top: pixelTop, width, height })
+      .png()
+      .toBuffer({ resolveWithObject: true });
+    const cropId = randomUUID();
+    crops.push({
+      index: line.index,
+      box: line.box,
+      regionId: randomUUID(),
+      cropId,
+      bytes: data,
+      width: Number(info.width || width),
+      height: Number(info.height || height),
+    });
+  }
+  return crops;
+};
+
+const recognizeLineCrops = async (config, crops) => {
+  const batchValue = Number(process.env.HTR_LINE_BATCH_SIZE || 6);
+  const batchSize = Number.isFinite(batchValue) ? Math.min(8, Math.max(1, Math.floor(batchValue))) : 6;
+  const texts = new Array(crops.length);
+  const started = Date.now();
+
+  for (let offset = 0; offset < crops.length; offset += batchSize) {
+    const batch = crops.slice(offset, offset + batchSize);
+    const completion = await openRouterCompletion({
+      apiKey: config.openrouterKey,
+      model: getOcrModel(),
+      prompt: [
+        'Each supplied image is a separate crop of exactly one Tajik handwritten or printed text line.',
+        'The full page is not supplied: use only the pixels in each crop.',
+        'Transcribe every crop and preserve order, punctuation, digits, and Tajik letters ғ, ӣ, қ, ӯ, ҳ, ҷ.',
+        'Never merge crops, invent unreadable text, or add explanations.',
+        'Return JSON only in this exact shape: {"lines":[{"index":0,"text":"..."}]}.',
+        'The index must match the line_index label of each supplied crop.'
+      ].join(' '),
+      images: batch.map((crop, batchIndex) => ({
+        bytes: crop.bytes,
+        label: `line_index=${offset + batchIndex}`,
+      })),
+    });
+    const decoded = parseModelJson(openRouterContent(completion));
+    const rawLines = Array.isArray(decoded?.lines) ? decoded.lines : null;
+    if (!rawLines || rawLines.length !== batch.length) {
+      throw Object.assign(new Error('Gemini вернул не все результаты для кропов строк.'), { status: 502, retryable: true });
+    }
+    const seen = new Set();
+    for (const line of rawLines) {
+      const rawIndex = Number(line?.index);
+      const globalIndex = rawIndex >= offset && rawIndex < offset + batch.length ? rawIndex : offset + rawIndex;
+      if (!Number.isInteger(globalIndex) || globalIndex < offset || globalIndex >= offset + batch.length || seen.has(globalIndex) || typeof line?.text !== 'string') {
+        throw Object.assign(new Error('Gemini вернул некорректные индексы кропов.'), { status: 502, retryable: true });
+      }
+      seen.add(globalIndex);
+      texts[globalIndex] = line.text.trim();
+    }
+    if (seen.size !== batch.length) {
+      throw Object.assign(new Error('Gemini пропустил кроп строки.'), { status: 502, retryable: true });
+    }
+  }
+
+  return { texts, durationMs: Date.now() - started };
+};
+
+const postSupabaseRows = async (config, table, rows) => {
+  const upstream = await fetch(restUrl(config, table), {
+    method: 'POST',
+    headers: { ...restHeaders(config.supabaseKey), Prefer: 'return=minimal' },
+    body: JSON.stringify(rows),
+  });
+  if (!upstream.ok) {
+    throw Object.assign(new Error(`Supabase ${table}: ${await upstream.text()}`), { status: 502 });
+  }
+};
+
+const uploadLineCrop = async (config, session, crop) => {
+  const storageKey = `${session}/line-crops/${crop.cropId}.png`;
+  const upstream = await fetch(storageUrl(config, storageKey), {
+    method: 'POST',
+    headers: { ...storageHeaders(config.supabaseKey, 'image/png'), 'x-upsert': 'true' },
+    body: crop.bytes,
+  });
+  if (!upstream.ok) {
+    throw Object.assign(new Error(`Supabase Storage line crop: ${await upstream.text()}`), { status: 502 });
+  }
+  return {
+    ...crop,
+    storageKey,
+    sha256: createHash('sha256').update(crop.bytes).digest('hex'),
+  };
+};
+
+const persistVercelLinePipeline = async ({ config, session, pageId, jobId, documentId, crops, texts, durationMs }) => {
+  const now = new Date().toISOString();
+  const model = getOcrModel();
+  const regions = crops.map((crop) => ({
+    id: crop.regionId,
+    recognition_run_id: jobId,
+    page_id: pageId,
+    source_region_id: `vercel:${crop.index}`,
+    polygon_json: JSON.stringify([
+      { x: crop.box[1] / 1000, y: crop.box[0] / 1000 },
+      { x: crop.box[3] / 1000, y: crop.box[0] / 1000 },
+      { x: crop.box[3] / 1000, y: crop.box[2] / 1000 },
+      { x: crop.box[1] / 1000, y: crop.box[2] / 1000 },
+    ]),
+    reading_order: crop.index,
+    source: 'gemini_openrouter',
+    flags_json: JSON.stringify(['vercel_page_detection', 'line_crop_png']),
+    detector_version: model,
+    detector_score: null,
+    page_revision: 1,
+    created_at: now,
+  }));
+  await postSupabaseRows(config, 'recognition_run_regions', regions);
+
+  const storedCrops = [];
+  for (const crop of crops) storedCrops.push(await uploadLineCrop(config, session, crop));
+  await postSupabaseRows(config, 'recognition_line_crops', storedCrops.map((crop) => ({
+    id: crop.cropId,
+    owner_session_id: session,
+    recognition_run_id: jobId,
+    run_region_id: crop.regionId,
+    storage_key: crop.storageKey,
+    sha256: crop.sha256,
+    byte_size: crop.bytes.length,
+    width: crop.width,
+    height: crop.height,
+    padding_fraction: getLineCropPadding(),
+    created_at: now,
+  })));
+
+  const perLineDuration = Math.max(0, Math.round(durationMs / Math.max(1, crops.length)));
+  await postSupabaseRows(config, 'recognition_line_results', storedCrops.map((crop, index) => ({
+    id: randomUUID(),
+    owner_session_id: session,
+    recognition_run_id: jobId,
+    run_region_id: crop.regionId,
+    crop_id: crop.cropId,
+    line_attempt: 1,
+    state: 'completed',
+    raw_text: texts[index] || '',
+    generation_json: JSON.stringify({ provider: 'openrouter', model, mode: 'vercel_line_crop' }),
+    duration_ms: perLineDuration,
+    error_code: null,
+    error_retryable: 0,
+    created_at: now,
+    updated_at: now,
+  })));
+
+  const rawText = texts.join('\n');
+  await postSupabaseRows(config, 'page_raw_results', {
+    id: randomUUID(),
+    owner_session_id: session,
+    recognition_run_id: jobId,
+    page_id: pageId,
+    raw_text: rawText,
+    is_partial: false,
+    created_at: now,
+  });
+  return { rawText, storedCrops };
+};
+
 const listDocuments = async (request, response) => {
   const config = configuration();
   const session = getSessionId(request);
@@ -226,7 +540,7 @@ const getEditorDocument = async (request, response, documentId) => {
       restUrl(
         config,
         'page_raw_results',
-        `owner_session_id=eq.${encodeURIComponent(session)}&page_id=in.(${pageIds.join(',')})&select=page_id,raw_text,created_at&order=created_at.desc`,
+        `owner_session_id=eq.${encodeURIComponent(session)}&page_id=in.(${pageIds.join(',')})&select=recognition_run_id,page_id,raw_text,is_partial,created_at&order=created_at.desc`,
       ),
       { headers: restHeaders(config.supabaseKey) },
     );
@@ -241,7 +555,76 @@ const getEditorDocument = async (request, response, documentId) => {
     if (isUuid(row?.page_id) && !latestRawByPage.has(row.page_id)) latestRawByPage.set(row.page_id, row);
   }
 
-  const lines = pageRows.flatMap((page) => {
+  const latestRunIds = [...latestRawByPage.values()]
+    .map((row) => row?.recognition_run_id)
+    .filter(isUuid);
+  let regionRows = [];
+  let lineResultRows = [];
+  if (latestRunIds.length) {
+    const regionRes = await fetch(
+      restUrl(
+        config,
+        'recognition_run_regions',
+        `recognition_run_id=in.(${latestRunIds.join(',')})&select=id,recognition_run_id,page_id,reading_order&order=reading_order.asc`,
+      ),
+      { headers: restHeaders(config.supabaseKey) },
+    );
+    const resultRes = await fetch(
+      restUrl(
+        config,
+        'recognition_line_results',
+        `owner_session_id=eq.${encodeURIComponent(session)}&recognition_run_id=in.(${latestRunIds.join(',')})&state=eq.completed&select=run_region_id,crop_id,raw_text,line_attempt,generation_json,created_at&order=line_attempt.desc,created_at.desc`,
+      ),
+      { headers: restHeaders(config.supabaseKey) },
+    );
+    if (regionRes.ok) {
+      const values = await regionRes.json();
+      if (Array.isArray(values)) regionRows = values;
+    }
+    if (resultRes.ok) {
+      const values = await resultRes.json();
+      if (Array.isArray(values)) lineResultRows = values;
+    }
+  }
+
+  const latestLineResultByRegion = new Map();
+  for (const row of lineResultRows) {
+    if (isUuid(row?.run_region_id) && !latestLineResultByRegion.has(row.run_region_id)) {
+      latestLineResultByRegion.set(row.run_region_id, row);
+    }
+  }
+  const pageOrder = new Map(pageRows.map((page, index) => [page?.id, index]));
+  const croppedLines = regionRows
+    .filter((region) => latestRunIds.includes(region?.recognition_run_id))
+    .sort((left, right) => {
+      const pageDifference = (pageOrder.get(left.page_id) ?? 0) - (pageOrder.get(right.page_id) ?? 0);
+      return pageDifference || Number(left.reading_order || 0) - Number(right.reading_order || 0);
+    })
+    .flatMap((region) => {
+      const result = latestLineResultByRegion.get(region.id);
+      if (!result?.crop_id) return [];
+      let generation = {};
+      try {
+        generation = result.generation_json ? JSON.parse(result.generation_json) : {};
+      } catch {}
+      const status = ['edited', 'confirmed'].includes(generation?.editor_status)
+        ? generation.editor_status
+        : 'unverified';
+      const revision = Math.max(1, Number(generation?.editor_revision || result.line_attempt || 1));
+      return [{
+        id: `vercel-line-${region.id}`,
+        page_id: String(region.page_id),
+        position: 0,
+        raw_text: String(result.raw_text || ''),
+        text: String(result.raw_text || ''),
+        status,
+        revision,
+        crop_url: `/api/v1/line-crops/${encodeURIComponent(result.crop_id)}/preview`,
+      }];
+    })
+    .map((line, index) => ({ ...line, position: index }));
+
+  const lines = croppedLines.length ? croppedLines : pageRows.flatMap((page) => {
     const raw = latestRawByPage.get(page?.id);
     if (!raw) return [];
     const pageId = String(page.id);
@@ -271,13 +654,112 @@ const getEditorDocument = async (request, response, documentId) => {
   });
 };
 
+const lineCropHandler = async (request, response, cropId) => {
+  if (!isUuid(cropId)) throw Object.assign(new Error('Кроп строки не найден.'), { status: 404 });
+  const config = configuration();
+  const session = getSessionId(request);
+  const cropRes = await fetch(
+    restUrl(
+      config,
+      'recognition_line_crops',
+      `id=eq.${encodeURIComponent(cropId)}&owner_session_id=eq.${encodeURIComponent(session)}&select=storage_key,sha256&limit=1`,
+    ),
+    { headers: restHeaders(config.supabaseKey) },
+  );
+  if (!cropRes.ok) throw Object.assign(new Error('Кроп строки не найден.'), { status: 404 });
+  const rows = await cropRes.json();
+  const crop = Array.isArray(rows) ? rows[0] : null;
+  if (!crop?.storage_key) throw Object.assign(new Error('Кроп строки не найден.'), { status: 404 });
+  const { upstream, bytes } = await download(crop.storage_key);
+  response.statusCode = 200;
+  response.setHeader('Content-Type', 'image/png');
+  response.setHeader('Cache-Control', 'private, max-age=300');
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  if (crop.sha256) response.setHeader('ETag', `"${String(crop.sha256).slice(0, 24)}"`);
+  response.end(bytes);
+};
+
 const syntheticEditorPageId = (lineId) => {
   const prefix = 'vercel-';
   const pageId = typeof lineId === 'string' && lineId.startsWith(prefix) ? lineId.slice(prefix.length) : '';
   return isUuid(pageId) ? pageId : null;
 };
 
+const syntheticEditorRegionId = (lineId) => {
+  const prefix = 'vercel-line-';
+  const regionId = typeof lineId === 'string' && lineId.startsWith(prefix) ? lineId.slice(prefix.length) : '';
+  return isUuid(regionId) ? regionId : null;
+};
+
+const updateSyntheticLineResult = async (request, response, regionId, status) => {
+  const body = await readJsonBody(request);
+  const text = typeof body.text === 'string' ? body.text : '';
+  const revision = Number.isFinite(Number(body.revision)) ? Number(body.revision) : 0;
+  const config = configuration();
+  const session = getSessionId(request);
+
+  const regionRes = await fetch(
+    restUrl(config, 'recognition_run_regions', `id=eq.${encodeURIComponent(regionId)}&select=page_id,recognition_run_id&limit=1`),
+    { headers: restHeaders(config.supabaseKey) },
+  );
+  const regions = regionRes.ok ? await regionRes.json() : [];
+  const region = Array.isArray(regions) ? regions[0] : null;
+  if (!region?.page_id || !region?.recognition_run_id) {
+    throw Object.assign(new Error('Регион редактора не найден.'), { status: 404 });
+  }
+
+  const resultRes = await fetch(
+    restUrl(
+      config,
+      'recognition_line_results',
+      `owner_session_id=eq.${encodeURIComponent(session)}&run_region_id=eq.${encodeURIComponent(regionId)}&state=eq.completed&select=id,generation_json&order=line_attempt.desc,created_at.desc&limit=1`,
+    ),
+    { headers: restHeaders(config.supabaseKey) },
+  );
+  const results = resultRes.ok ? await resultRes.json() : [];
+  const result = Array.isArray(results) ? results[0] : null;
+  if (!result?.id) throw Object.assign(new Error('Результат строки ещё не сохранён.'), { status: 409 });
+
+  let generation = {};
+  try {
+    generation = result.generation_json ? JSON.parse(result.generation_json) : {};
+  } catch {}
+  const nextRevision = Math.max(revision + 1, Number(generation?.editor_revision || 0) + 1, 1);
+  const updateRes = await fetch(
+    restUrl(config, 'recognition_line_results', `id=eq.${encodeURIComponent(result.id)}&owner_session_id=eq.${encodeURIComponent(session)}`),
+    {
+      method: 'PATCH',
+      headers: { ...restHeaders(config.supabaseKey), Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        raw_text: text,
+        generation_json: JSON.stringify({ ...generation, editor_status: status, editor_revision: nextRevision }),
+        updated_at: new Date().toISOString(),
+      }),
+    },
+  );
+  if (!updateRes.ok) throw Object.assign(new Error(`Не удалось сохранить строку: ${await updateRes.text()}`), { status: 502 });
+
+  const pageRes = await fetch(
+    restUrl(config, 'pages', `id=eq.${encodeURIComponent(region.page_id)}&select=document_id&limit=1`),
+    { headers: restHeaders(config.supabaseKey) },
+  );
+  const pages = pageRes.ok ? await pageRes.json() : [];
+  const documentId = Array.isArray(pages) ? pages[0]?.document_id : null;
+  if (!documentId) throw Object.assign(new Error('Документ строки не найден.'), { status: 404 });
+
+  json(response, 200, {
+    line_id: `vercel-line-${regionId}`,
+    text,
+    revision: nextRevision,
+    updated_at: new Date().toISOString(),
+    status,
+    document_id: documentId,
+  });
+};
+
 const updateSyntheticEditorLine = async (request, response, lineId, status) => {
+  const regionId = syntheticEditorRegionId(lineId);
+  if (regionId) return await updateSyntheticLineResult(request, response, regionId, status);
   const pageId = syntheticEditorPageId(lineId);
   if (!pageId) throw Object.assign(new Error('Строка редактора не найдена.'), { status: 404 });
   const body = await readJsonBody(request);
@@ -511,7 +993,6 @@ const startRecognitionJob = async (request, response, pageId) => {
 
   let documentId = randomUUID();
   let storageKey = '';
-  let mediaType = 'image/jpeg';
 
   try {
     const pageRes = await fetch(restUrl(config, 'pages', `id=eq.${encodeURIComponent(pageId)}&select=*,assets:source_asset_id(*)`), {
@@ -522,7 +1003,6 @@ const startRecognitionJob = async (request, response, pageId) => {
       if (rows && rows[0]) {
         documentId = rows[0].document_id || documentId;
         storageKey = rows[0].assets?.storage_key || '';
-        mediaType = rows[0].assets?.media_type || mediaType;
       }
     }
   } catch (err) {
@@ -538,7 +1018,6 @@ const startRecognitionJob = async (request, response, pageId) => {
       if (assets?.[0]) {
         storageKey = assets[0].storage_key;
         documentId = assets[0].document_id || documentId;
-        mediaType = assets[0].media_type || mediaType;
       }
     }
   }
@@ -550,34 +1029,12 @@ const startRecognitionJob = async (request, response, pageId) => {
   const { bytes } = await download(storageKey);
   if (!config.openrouterKey) throw Object.assign(new Error('OPENROUTER_API_KEY не настроен.'), { status: 500 });
 
-  const prompt = [
-    'Transcribe all visible handwritten or printed Tajik Cyrillic text.',
-    'Preserve line order from top to bottom and return plain text only.',
-    'Use Tajik letters ғ, ӣ, қ, ӯ, ҳ, ҷ exactly; do not replace them with Russian letters.',
-    'Do not explain, guess hidden text, or add markdown.',
-  ].join(' ');
-
-  const ai = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.openrouterKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : 'https://vercel.app',
-      'X-Title': 'Tajik HTR Studio',
-    },
-    body: JSON.stringify({
-      model: process.env.HTR_OCR_MODEL || 'google/gemini-2.5-flash',
-      temperature: 0,
-      messages: [{ role: 'user', content: [
-        { type: 'text', text: prompt },
-        { type: 'image_url', image_url: { url: `data:${mediaType};base64,${bytes.toString('base64')}` } },
-      ] }],
-    }),
-  });
-
-  if (!ai.ok) throw Object.assign(new Error(`OpenRouter Gemini: ${await ai.text()}`), { status: 502 });
-  const completion = await ai.json();
-  const rawText = String(completion?.choices?.[0]?.message?.content || '').trim() || 'Текст не обнаружен';
+  // Gemini sees the whole page only for line localization. Recognition gets
+  // separate PNG crops, so it cannot accidentally transcribe the page as one block.
+  const page = await normalizePageImage(bytes);
+  const lineBoxes = await detectPageLineBoxes(config, page);
+  const crops = await cropPageLines(page, lineBoxes);
+  const recognition = await recognizeLineCrops(config, crops);
 
   // Persist in DB. The Vercel adapter must create the run before page_raw_results:
   // page_raw_results.recognition_run_id is a foreign key in the cloud schema.
@@ -606,7 +1063,7 @@ const startRecognitionJob = async (request, response, pageId) => {
       }),
     });
     if (!jobRes.ok) {
-      console.warn('Persist recognition job warning:', await jobRes.text());
+      throw Object.assign(new Error(`Persist recognition job: ${await jobRes.text()}`), { status: 502 });
     } else {
       const runRes = await fetch(restUrl(config, 'recognition_runs'), {
         method: 'POST',
@@ -621,30 +1078,31 @@ const startRecognitionJob = async (request, response, pageId) => {
         }),
       });
       if (!runRes.ok) {
-        console.warn('Persist recognition run warning:', await runRes.text());
+        throw Object.assign(new Error(`Persist recognition run: ${await runRes.text()}`), { status: 502 });
       } else {
-        const rawRes = await fetch(restUrl(config, 'page_raw_results'), {
-          method: 'POST',
-          headers: { ...restHeaders(config.supabaseKey), Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            id: randomUUID(),
-            recognition_run_id: jobId,
-            page_id: pageId,
-            owner_session_id: session,
-            raw_text: rawText,
-            is_partial: false,
-            created_at: completedAt,
-          }),
+        await persistVercelLinePipeline({
+          config,
+          session,
+          pageId,
+          jobId,
+          documentId,
+          crops,
+          texts: recognition.texts,
+          durationMs: recognition.durationMs,
         });
-        if (!rawRes.ok) console.warn('Persist raw result warning:', await rawRes.text());
       }
     }
 
   } catch (err) {
-    console.warn('Persist recognition error:', err);
+    console.error('Persist line recognition error:', err);
+    throw Object.assign(new Error('Не удалось сохранить отдельные кропы строк в Supabase.'), {
+      status: err.status || 502,
+      retryable: false,
+      cause: err,
+    });
   }
 
-  const now = new Date().toISOString();
+  const now = completedAt;
   // Return JobSnapshot matching parseJobSnapshot
   json(response, 201, {
     id: jobId,
@@ -653,8 +1111,8 @@ const startRecognitionJob = async (request, response, pageId) => {
     state: 'completed',
     stage: 'completed',
     priority: 0,
-    processed_count: 1,
-    total_count: 1,
+    processed_count: crops.length,
+    total_count: crops.length,
     attempt: 1,
     max_attempts: 1,
     cancellation_requested: false,
@@ -866,6 +1324,11 @@ export default async function handler(request, response) {
       return await assetHandler(requestUrl, response);
     }
 
+    const lineCropMatch = path.match(/^\/v1\/line-crops\/([^/]+)\/preview$/);
+    if (request.method === 'GET' && lineCropMatch) {
+      return await lineCropHandler(request, response, lineCropMatch[1]);
+    }
+
     // 5. Preparation routes
     const prepMatch = path.match(/^\/v1\/pages\/([^/]+)\/preparation$/);
     if (request.method === 'GET' && prepMatch) {
@@ -882,8 +1345,7 @@ export default async function handler(request, response) {
       return await startRecognitionJob(request, response, jobCreateMatch[1]);
     }
 
-    // 7. Vercel editor compatibility. The cloud adapter returns one editable
-    // page line because line detection is owned by the FastAPI worker.
+    // 7. Editor and line-crop routes.
     const editorMatch = path.match(/^\/v1\/documents\/([^/]+)\/editor$/);
     if (request.method === 'GET' && editorMatch) {
       return await getEditorDocument(request, response, editorMatch[1]);

@@ -1,0 +1,11 @@
+{
+  "name": "tajik-htr-studio-vercel-api",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "sharp": "0.33.5"
+  }
+}
