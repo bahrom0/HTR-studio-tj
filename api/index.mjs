@@ -68,6 +68,24 @@ const ensureSession = async (config, sessionId) => {
   }
 };
 
+const anonymousAccessSession = (request) => {
+  const session = getSessionId(request);
+  const userUuid = isUuid(session) ? session : randomUUID();
+  const now = new Date().toISOString();
+  return {
+    authenticated: true,
+    expires_at: new Date(Date.now() + 10 * 365 * 24 * 3600 * 1000).toISOString(),
+    csrf_token: 'csrf-anon',
+    user: {
+      id: userUuid,
+      email: 'user@tajik-htr.local',
+      name: 'Пользователь',
+      created_at: now,
+      updated_at: now,
+    },
+  };
+};
+
 const getImageDimensions = (buffer) => {
   try {
     if (buffer.length > 24 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
@@ -569,24 +587,11 @@ export default async function handler(request, response) {
 
     // 2. Anonymous Access session
     if (request.method === 'GET' && path === '/v1/access/session') {
-      const session = getSessionId(request);
-      const userUuid = isUuid(session) ? session : randomUUID();
-      return json(response, 200, {
-        authenticated: true,
-        expires_at: new Date(Date.now() + 10 * 365 * 24 * 3600 * 1000).toISOString(),
-        csrf_token: 'csrf-anon',
-        user: {
-          id: userUuid,
-          email: 'user@tajik-htr.local',
-          name: 'Пользователь',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      });
+      return json(response, 200, anonymousAccessSession(request));
     }
 
     if (request.method === 'POST' && path === '/v1/access/csrf') {
-      return json(response, 200, { csrf_token: 'csrf-anon' });
+      return json(response, 200, anonymousAccessSession(request));
     }
 
     // 3. Document list & upload
