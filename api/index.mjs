@@ -4,6 +4,9 @@ const json = (response, status, value) => {
   response.statusCode = status;
   response.setHeader('Content-Type', 'application/json; charset=utf-8');
   response.setHeader('Cache-Control', 'no-store');
+  if (value && typeof value === 'object' && typeof value.request_id === 'string') {
+    response.setHeader('X-Request-ID', value.request_id);
+  }
   response.end(JSON.stringify(value));
 };
 
@@ -16,6 +19,17 @@ const readBody = async (request, limit = 15 * 1024 * 1024) => {
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
+};
+
+const readJsonBody = async (request) => {
+  const body = await readBody(request, 2 * 1024 * 1024);
+  try {
+    const value = JSON.parse(body.toString('utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('object_required');
+    return value;
+  } catch {
+    throw Object.assign(new Error('Некорректное JSON-тело запроса.'), { status: 400 });
+  }
 };
 
 const configuration = () => {
@@ -175,6 +189,141 @@ const deleteDocument = async (request, response, documentId) => {
     throw Object.assign(new Error(`Ошибка удаления документа из Supabase: ${await upstream.text()}`), { status: 502 });
   }
   json(response, 200, { success: true });
+};
+
+const getEditorDocument = async (request, response, documentId) => {
+  const config = configuration();
+  const session = getSessionId(request);
+  const documentRes = await fetch(
+    restUrl(
+      config,
+      'documents',
+      `id=eq.${encodeURIComponent(documentId)}&owner_session_id=eq.${encodeURIComponent(session)}&deleted_at=is.null&select=id,title,status,revision,created_at,updated_at`,
+    ),
+    { headers: restHeaders(config.supabaseKey) },
+  );
+  if (!documentRes.ok) throw Object.assign(new Error('Документ не найден.'), { status: 404 });
+  const documents = await documentRes.json();
+  const document = Array.isArray(documents) ? documents[0] : null;
+  if (!document) throw Object.assign(new Error('Документ не найден.'), { status: 404 });
+
+  const pagesRes = await fetch(
+    restUrl(
+      config,
+      'pages',
+      `document_id=eq.${encodeURIComponent(documentId)}&select=id,source_asset_id,page_index&order=page_index.asc`,
+    ),
+    { headers: restHeaders(config.supabaseKey) },
+  );
+  if (!pagesRes.ok) throw Object.assign(new Error('Не удалось загрузить страницы документа.'), { status: 502 });
+  const pages = await pagesRes.json();
+  const pageRows = Array.isArray(pages) ? pages : [];
+  const pageIds = pageRows.map((page) => page?.id).filter(isUuid);
+
+  const rawRows = [];
+  if (pageIds.length) {
+    const rawRes = await fetch(
+      restUrl(
+        config,
+        'page_raw_results',
+        `owner_session_id=eq.${encodeURIComponent(session)}&page_id=in.(${pageIds.join(',')})&select=page_id,raw_text,created_at&order=created_at.desc`,
+      ),
+      { headers: restHeaders(config.supabaseKey) },
+    );
+    if (rawRes.ok) {
+      const values = await rawRes.json();
+      if (Array.isArray(values)) rawRows.push(...values);
+    }
+  }
+
+  const latestRawByPage = new Map();
+  for (const row of rawRows) {
+    if (isUuid(row?.page_id) && !latestRawByPage.has(row.page_id)) latestRawByPage.set(row.page_id, row);
+  }
+
+  const lines = pageRows.flatMap((page) => {
+    const raw = latestRawByPage.get(page?.id);
+    if (!raw) return [];
+    const pageId = String(page.id);
+    return [{
+      id: `vercel-${pageId}`,
+      page_id: pageId,
+      position: 0,
+      raw_text: String(raw.raw_text || ''),
+      text: String(raw.raw_text || ''),
+      status: 'unverified',
+      revision: 1,
+      crop_url: page.source_asset_id ? `/api/v1/assets/${encodeURIComponent(page.source_asset_id)}` : '/api/v1/assets',
+    }];
+  });
+
+  json(response, 200, {
+    document: {
+      id: document.id,
+      title: document.title || 'Безымянный документ',
+      status: document.status || 'draft',
+      revision: Number(document.revision || 1),
+      page_count: pageRows.length || 1,
+      created_at: document.created_at || new Date().toISOString(),
+      updated_at: document.updated_at || new Date().toISOString(),
+    },
+    lines,
+  });
+};
+
+const syntheticEditorPageId = (lineId) => {
+  const prefix = 'vercel-';
+  const pageId = typeof lineId === 'string' && lineId.startsWith(prefix) ? lineId.slice(prefix.length) : '';
+  return isUuid(pageId) ? pageId : null;
+};
+
+const updateSyntheticEditorLine = async (request, response, lineId, status) => {
+  const pageId = syntheticEditorPageId(lineId);
+  if (!pageId) throw Object.assign(new Error('Строка редактора не найдена.'), { status: 404 });
+  const body = await readJsonBody(request);
+  const text = typeof body.text === 'string' ? body.text : '';
+  const revision = Number.isFinite(Number(body.revision)) ? Number(body.revision) : 0;
+  const config = configuration();
+  const session = getSessionId(request);
+
+  const pageRes = await fetch(
+    restUrl(config, 'pages', `id=eq.${encodeURIComponent(pageId)}&select=document_id`),
+    { headers: restHeaders(config.supabaseKey) },
+  );
+  const pages = pageRes.ok ? await pageRes.json() : [];
+  const documentId = Array.isArray(pages) ? pages[0]?.document_id : null;
+  if (!documentId) throw Object.assign(new Error('Страница редактора не найдена.'), { status: 404 });
+
+  const rawRes = await fetch(
+    restUrl(
+      config,
+      'page_raw_results',
+      `owner_session_id=eq.${encodeURIComponent(session)}&page_id=eq.${encodeURIComponent(pageId)}&select=id&order=created_at.desc&limit=1`,
+    ),
+    { headers: restHeaders(config.supabaseKey) },
+  );
+  const rawRows = rawRes.ok ? await rawRes.json() : [];
+  const rawId = Array.isArray(rawRows) ? rawRows[0]?.id : null;
+  if (!rawId) throw Object.assign(new Error('Результат распознавания ещё не сохранён.'), { status: 409 });
+
+  const updateRes = await fetch(
+    restUrl(config, 'page_raw_results', `id=eq.${encodeURIComponent(rawId)}&owner_session_id=eq.${encodeURIComponent(session)}`),
+    {
+      method: 'PATCH',
+      headers: { ...restHeaders(config.supabaseKey), Prefer: 'return=minimal' },
+      body: JSON.stringify({ raw_text: text }),
+    },
+  );
+  if (!updateRes.ok) throw Object.assign(new Error(`Не удалось сохранить строку: ${await updateRes.text()}`), { status: 502 });
+
+  json(response, 200, {
+    line_id: lineId,
+    text,
+    revision: Math.max(1, revision + 1),
+    updated_at: new Date().toISOString(),
+    status,
+    document_id: documentId,
+  });
 };
 
 const upload = async (request, response) => {
@@ -430,15 +579,18 @@ const startRecognitionJob = async (request, response, pageId) => {
   const completion = await ai.json();
   const rawText = String(completion?.choices?.[0]?.message?.content || '').trim() || 'Текст не обнаружен';
 
-  // Persist in DB
+  // Persist in DB. The Vercel adapter must create the run before page_raw_results:
+  // page_raw_results.recognition_run_id is a foreign key in the cloud schema.
+  const completedAt = new Date().toISOString();
   try {
-    await fetch(restUrl(config, 'documents', `id=eq.${encodeURIComponent(documentId)}`), {
+    const documentRes = await fetch(restUrl(config, 'documents', `id=eq.${encodeURIComponent(documentId)}`), {
       method: 'PATCH',
       headers: { ...restHeaders(config.supabaseKey), Prefer: 'return=minimal' },
-      body: JSON.stringify({ status: 'ready', updated_at: new Date().toISOString() }),
+      body: JSON.stringify({ status: 'ready', updated_at: completedAt }),
     });
+    if (!documentRes.ok) console.warn('Persist document status warning:', await documentRes.text());
 
-    await fetch(restUrl(config, 'recognition_jobs'), {
+    const jobRes = await fetch(restUrl(config, 'recognition_jobs'), {
       method: 'POST',
       headers: { ...restHeaders(config.supabaseKey), Prefer: 'return=minimal' },
       body: JSON.stringify({
@@ -446,28 +598,48 @@ const startRecognitionJob = async (request, response, pageId) => {
         owner_session_id: session,
         document_id: documentId,
         state: 'completed',
-        stage: 'completed',
-        priority: 0,
-        attempts: 1,
-        max_attempts: 1,
-        processed_count: 1,
-        total_count: 1,
         revision: 1,
+        created_at: completedAt,
+        updated_at: completedAt,
+        started_at: completedAt,
+        finished_at: completedAt,
       }),
     });
+    if (!jobRes.ok) {
+      console.warn('Persist recognition job warning:', await jobRes.text());
+    } else {
+      const runRes = await fetch(restUrl(config, 'recognition_runs'), {
+        method: 'POST',
+        headers: { ...restHeaders(config.supabaseKey), Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          id: jobId,
+          job_id: jobId,
+          attempt: 1,
+          started_at: completedAt,
+          finished_at: completedAt,
+          outcome: 'succeeded',
+        }),
+      });
+      if (!runRes.ok) {
+        console.warn('Persist recognition run warning:', await runRes.text());
+      } else {
+        const rawRes = await fetch(restUrl(config, 'page_raw_results'), {
+          method: 'POST',
+          headers: { ...restHeaders(config.supabaseKey), Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            id: randomUUID(),
+            recognition_run_id: jobId,
+            page_id: pageId,
+            owner_session_id: session,
+            raw_text: rawText,
+            is_partial: false,
+            created_at: completedAt,
+          }),
+        });
+        if (!rawRes.ok) console.warn('Persist raw result warning:', await rawRes.text());
+      }
+    }
 
-    await fetch(restUrl(config, 'page_raw_results'), {
-      method: 'POST',
-      headers: { ...restHeaders(config.supabaseKey), Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        id: randomUUID(),
-        recognition_run_id: jobId,
-        page_id: pageId,
-        owner_session_id: session,
-        raw_text: rawText,
-        is_partial: false,
-      }),
-    });
   } catch (err) {
     console.warn('Persist recognition error:', err);
   }
@@ -497,23 +669,73 @@ const startRecognitionJob = async (request, response, pageId) => {
   });
 };
 
+const resolveJobIdentity = async (config, jobId, session) => {
+  let documentId = null;
+  let pageId = null;
+
+  try {
+    const jobRes = await fetch(
+      restUrl(
+        config,
+        'recognition_jobs',
+        `id=eq.${encodeURIComponent(jobId)}&owner_session_id=eq.${encodeURIComponent(session)}&select=document_id,page_id&limit=1`,
+      ),
+      { headers: restHeaders(config.supabaseKey) },
+    );
+    if (jobRes.ok) {
+      const rows = await jobRes.json();
+      if (Array.isArray(rows) && rows[0]) {
+        documentId = rows[0].document_id || null;
+        pageId = rows[0].page_id || null;
+      }
+    }
+  } catch (err) {
+    console.warn('Resolve recognition job warning:', err);
+  }
+
+  if (!pageId) {
+    try {
+      const rawRes = await fetch(
+        restUrl(
+          config,
+          'page_raw_results',
+          `recognition_run_id=eq.${encodeURIComponent(jobId)}&owner_session_id=eq.${encodeURIComponent(session)}&select=page_id&order=created_at.desc&limit=1`,
+        ),
+        { headers: restHeaders(config.supabaseKey) },
+      );
+      if (rawRes.ok) {
+        const rows = await rawRes.json();
+        pageId = Array.isArray(rows) ? rows[0]?.page_id || null : null;
+      }
+    } catch (err) {
+      console.warn('Resolve raw result warning:', err);
+    }
+  }
+
+  if (!documentId && pageId) {
+    try {
+      const pageRes = await fetch(
+        restUrl(config, 'pages', `id=eq.${encodeURIComponent(pageId)}&select=document_id&limit=1`),
+        { headers: restHeaders(config.supabaseKey) },
+      );
+      if (pageRes.ok) {
+        const rows = await pageRes.json();
+        documentId = Array.isArray(rows) ? rows[0]?.document_id || null : null;
+      }
+    } catch (err) {
+      console.warn('Resolve page document warning:', err);
+    }
+  }
+
+  return { documentId, pageId };
+};
+
 const getJobSnapshot = async (request, response, jobId) => {
   const config = configuration();
   const now = new Date().toISOString();
-  let documentId = randomUUID();
-  let pageId = randomUUID();
-
-  try {
-    const res = await fetch(restUrl(config, 'page_raw_results', `recognition_run_id=eq.${encodeURIComponent(jobId)}&select=*`), {
-      headers: restHeaders(config.supabaseKey),
-    });
-    if (res.ok) {
-      const rows = await res.json();
-      if (rows && rows[0]) {
-        pageId = rows[0].page_id || pageId;
-      }
-    }
-  } catch {}
+  const identity = await resolveJobIdentity(config, jobId, getSessionId(request));
+  const documentId = identity.documentId || randomUUID();
+  const pageId = identity.pageId || randomUUID();
 
   json(response, 200, {
     id: jobId,
@@ -541,36 +763,69 @@ const getJobSnapshot = async (request, response, jobId) => {
 const getJobResult = async (request, response, jobId) => {
   const config = configuration();
   let rawText = '';
-  let documentId = randomUUID();
-  let pageId = randomUUID();
+  let pageId = null;
+  let isPartial = false;
 
   try {
-    const res = await fetch(restUrl(config, 'page_raw_results', `recognition_run_id=eq.${encodeURIComponent(jobId)}&select=*`), {
-      headers: restHeaders(config.supabaseKey),
-    });
+    const res = await fetch(
+      restUrl(
+        config,
+        'page_raw_results',
+        `recognition_run_id=eq.${encodeURIComponent(jobId)}&owner_session_id=eq.${encodeURIComponent(getSessionId(request))}&select=page_id,raw_text,is_partial&order=created_at.desc&limit=1`,
+      ),
+      { headers: restHeaders(config.supabaseKey) },
+    );
     if (res.ok) {
       const rows = await res.json();
       if (rows && rows[0]) {
-        rawText = rows[0].raw_text;
-        pageId = rows[0].page_id;
+        rawText = String(rows[0].raw_text || '');
+        pageId = rows[0].page_id || null;
+        isPartial = rows[0].is_partial === true || rows[0].is_partial === 1;
       }
     }
   } catch (err) {
     console.warn('getJobResult error:', err);
   }
 
+  const identity = await resolveJobIdentity(config, jobId, getSessionId(request));
+
   json(response, 200, {
     job_id: jobId,
-    document_id: documentId,
-    page_id: pageId,
+    document_id: identity.documentId || randomUUID(),
+    page_id: identity.pageId || pageId || randomUUID(),
     raw_text: rawText || 'Текст не распознан',
-    is_partial: false,
+    is_partial: isPartial,
   });
 };
 
 export default async function handler(request, response) {
   const requestUrl = new URL(request.url, 'https://vercel.local');
   const path = `/${requestUrl.searchParams.get('path') || ''}`.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
+
+  // Keep cross-origin calls safe for previews while preserving same-origin defaults.
+  const origin = String(request.headers.origin || '');
+  if (origin) {
+    try {
+      const originHost = new URL(origin).host;
+      const allowedHosts = new Set(
+        [request.headers.host, process.env.VERCEL_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]
+          .filter(Boolean)
+          .map((value) => String(value).replace(/^https?:\/\//, '').replace(/\/$/, '')),
+      );
+      response.setHeader('Vary', 'Origin');
+      if (allowedHosts.has(originHost)) {
+        response.setHeader('Access-Control-Allow-Origin', origin);
+        response.setHeader('Access-Control-Allow-Credentials', 'true');
+        response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID, X-CSRF-Token');
+        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      }
+    } catch {}
+  }
+
+  if (request.method === 'OPTIONS') {
+    response.statusCode = 204;
+    return response.end();
+  }
   
   try {
     // 1. Health checks
@@ -627,7 +882,22 @@ export default async function handler(request, response) {
       return await startRecognitionJob(request, response, jobCreateMatch[1]);
     }
 
-    // 7. Job status & results
+    // 7. Vercel editor compatibility. The cloud adapter returns one editable
+    // page line because line detection is owned by the FastAPI worker.
+    const editorMatch = path.match(/^\/v1\/documents\/([^/]+)\/editor$/);
+    if (request.method === 'GET' && editorMatch) {
+      return await getEditorDocument(request, response, editorMatch[1]);
+    }
+    const draftMatch = path.match(/^\/v1\/text-lines\/([^/]+)\/draft$/);
+    if (request.method === 'PUT' && draftMatch) {
+      return await updateSyntheticEditorLine(request, response, draftMatch[1], 'edited');
+    }
+    const confirmMatch = path.match(/^\/v1\/text-lines\/([^/]+)\/confirm$/);
+    if (request.method === 'POST' && confirmMatch) {
+      return await updateSyntheticEditorLine(request, response, confirmMatch[1], 'confirmed');
+    }
+
+    // 8. Job status & results
     const jobResultMatch = path.match(/^\/v1\/jobs\/([^/]+)\/result$/);
     if (request.method === 'GET' && jobResultMatch) {
       return await getJobResult(request, response, jobResultMatch[1]);
@@ -637,22 +907,35 @@ export default async function handler(request, response) {
       return await getJobSnapshot(request, response, jobSnapMatch[1]);
     }
 
-    // 8. Document details & delete
+    // 9. Document details & delete
     const docMatch = path.match(/^\/v1\/documents\/([^/]+)$/);
     if (docMatch) {
       if (request.method === 'GET') return await getDocument(request, response, docMatch[1]);
       if (request.method === 'DELETE') return await deleteDocument(request, response, docMatch[1]);
     }
 
-    // 9. SSE stream dummy fallback
+    // 10. SSE stream dummy fallback
     if (path === '/events' || path === '/v1/events') {
       response.statusCode = 204;
       return response.end();
     }
 
-    return json(response, 404, { message: 'API route not found.' });
+    const requestId = randomUUID();
+    return json(response, 404, {
+      code: 'route_not_found',
+      message: 'API route not found.',
+      retryable: false,
+      request_id: requestId,
+    });
   } catch (error) {
     console.error(error);
-    return json(response, error.status || 500, { message: error.message || 'Internal server error.' });
+    const requestId = randomUUID();
+    const status = error.status || 500;
+    return json(response, status, {
+      code: error.code || (status >= 500 ? 'internal_error' : 'request_failed'),
+      message: error.message || 'Internal server error.',
+      retryable: Boolean(error.retryable ?? status >= 500),
+      request_id: requestId,
+    });
   }
 }
