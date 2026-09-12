@@ -1,0 +1,26 @@
+.git/
+.gitignore
+
+**/.env
+**/.env.*
+**/node_modules/
+**/dist/
+**/.venv/
+**/.venv-*/
+**/.uv-cache/
+**/.pytest_cache/
+**/__pycache__/
+**/*.py[cod]
+**/*.sqlite3*
+
+api_server/data/
+api_server/models/*
+web_app/output/
+web_app/.playwright-cli/
+
+annotation_app/
+final_product/
+new_front/
+raw_dataset/
+"HTR v2 CER"/
+"Датасет 1000 реал фотографии"/
