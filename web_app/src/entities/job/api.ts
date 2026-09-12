@@ -22,7 +22,9 @@ export function createRecognitionJob(
     json: { priority: 0 },
     csrfToken,
     signal,
-    timeoutMs: 15_000,
+    // Vercel's cloud OCR path can take up to two minutes before returning
+    // the queued job snapshot. Keep this below the function's 300 s limit.
+    timeoutMs: 180_000,
     headers: { 'Idempotency-Key': idempotencyKey },
   });
 }
