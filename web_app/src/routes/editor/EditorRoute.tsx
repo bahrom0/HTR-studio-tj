@@ -65,7 +65,12 @@ export default function EditorRoute() {
             setLoadState('ready');
             setMessage('Офлайн-черновик загружен из кеша браузера.');
           } else {
-            setMessage(result.error.message);
+            const notFound = result.error.code === 'document_not_found';
+            setMessage(
+              notFound
+                ? 'Документ не найден или был удалён. Откройте редактор из списка документов.'
+                : result.error.message,
+            );
             setLoadState('error');
           }
         });
