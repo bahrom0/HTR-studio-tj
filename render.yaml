@@ -1,0 +1,56 @@
+services:
+  # One public origin serves the compiled frontend and the complete FastAPI API.
+  - type: web
+    name: htr-studio
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health/live
+    envVars:
+      - key: HTR_API_ENV
+        value: production
+      - key: HTR_COOKIE_SECURE
+        value: "true"
+      - key: HTR_OCR_PROVIDER
+        value: gemini
+      - key: HTR_GEMINI_MODE
+        value: page
+      - key: HTR_OCR_MODEL
+        value: google/gemini-2.5-flash
+      - key: HTR_OCR_TIMEOUT_SECONDS
+        value: "120"
+      - key: SUPABASE_BUCKET
+        value: htr-uploads
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+  # The API only enqueues jobs; this service owns the long-running OCR work.
+  - type: worker
+    name: htr-studio-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python -m app.worker.main
+    envVars:
+      - key: HTR_API_ENV
+        value: production
+      - key: HTR_OCR_PROVIDER
+        value: gemini
+      - key: HTR_GEMINI_MODE
+        value: page
+      - key: HTR_OCR_MODEL
+        value: google/gemini-2.5-flash
+      - key: HTR_OCR_TIMEOUT_SECONDS
+        value: "120"
+      - key: SUPABASE_BUCKET
+        value: htr-uploads
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
