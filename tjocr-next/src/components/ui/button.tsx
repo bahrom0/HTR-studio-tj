@@ -11,7 +11,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = 'primary', size = 'md', isLoading = false, children, disabled, ...props }, ref) => {
     const baseStyles =
-      'inline-flex items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-focus focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-button';
+      'inline-flex items-center justify-center font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-focus focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed rounded-button overflow-hidden select-none whitespace-nowrap';
 
     const sizeStyles = {
       sm: 'h-8 px-3 text-xs',
@@ -34,15 +34,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {isLoading ? (
-          <span className="flex items-center gap-2">
-            <svg className="h-4 w-4 animate-spin text-current" viewBox="0 0 24 24" fill="none">
+          <span className="inline-flex items-center justify-center gap-2 whitespace-nowrap">
+            <svg className="h-4 w-4 animate-spin shrink-0 text-current" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
-            <span>{children}</span>
+            <span className="inline-flex items-center gap-1.5">{children}</span>
           </span>
         ) : (
-          children
+          <span className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap">
+            {children}
+          </span>
         )}
       </button>
     );

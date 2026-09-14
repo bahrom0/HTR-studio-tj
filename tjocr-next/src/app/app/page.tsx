@@ -88,13 +88,21 @@ export default function HomePage() {
           <div>
             <h2 id="documents-title">{t.home.recentTitle}</h2>
           </div>
-          <span className="section-meta">{sectionMeta}</span>
+          {isLoading ? (
+            <div className="section-meta section-meta--loading" aria-label={t.common.loading}>
+              <span className="skeleton-shimmer section-meta-skeleton" aria-hidden="true" />
+              <span className="sr-only">{t.common.loading}</span>
+            </div>
+          ) : (
+            <span className="section-meta">{sectionMeta}</span>
+          )}
         </div>
 
         {loadError ? <p className="documents-error" role="status">{t.home.loadError}</p> : null}
 
         <DocumentList
           documents={documents}
+          isLoading={isLoading}
           ariaLabel={t.nav.documents}
           continueLabel={t.common.continue}
           emptyLabel={t.home.empty}

@@ -1,10 +1,12 @@
 import { NextRequest } from 'next/server';
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { createServerSupabaseClient } from '@/server/supabase/server';
 import { requireUser } from '@/server/auth/session';
 import { getServerConfig } from '@/server/config';
 import { assertSameOrigin, errorResponse, HttpError, jsonNoStore } from '@/server/security/request';
 import { enforceRateLimit } from '@/server/security/rate-limit';
+import { validateAndNormalizeImage } from '@/server/images/normalizer';
 
 const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
@@ -68,27 +70,34 @@ export async function POST(
       .single();
     if (documentError || !document) throw new HttpError('Документ не найден.', 'DOCUMENT_NOT_FOUND', 404, false);
 
-    // A second confirmation request should return the original records instead
-    // of creating duplicate assets/pages or turning a successful upload into a
-    // 500 response.
+    // Check if source asset already exists (idempotent retry)
     const { data: existingAsset } = await supabase
       .from('assets')
       .select('*')
       .eq('document_id', documentId)
       .eq('object_key', parsed.data.objectKey)
       .maybeSingle();
+
     if (existingAsset) {
       const { data: existingPage } = await supabase
         .from('pages')
-        .select('id')
+        .select('id, width, height, normalized_asset_id')
         .eq('document_id', documentId)
         .eq('source_asset_id', existingAsset.id)
         .maybeSingle();
+
+      const { data: existingNormalized } = existingPage?.normalized_asset_id
+        ? await supabase.from('assets').select('*').eq('id', existingPage.normalized_asset_id).maybeSingle()
+        : { data: null };
+
       return jsonNoStore({
         success: true,
         documentId,
         pageId: existingPage?.id ?? null,
         asset: toAssetDto(existingAsset as unknown as Record<string, unknown>),
+        normalizedAsset: existingNormalized ? toAssetDto(existingNormalized as unknown as Record<string, unknown>) : null,
+        width: existingPage?.width ?? 0,
+        height: existingPage?.height ?? 0,
         bytes: Number(existingAsset.bytes || 0),
         idempotent: true,
       });
@@ -114,6 +123,41 @@ export async function POST(
       throw new HttpError('Размер файла изменился во время загрузки.', 'UPLOAD_SIZE_MISMATCH', 400, false);
     }
 
+    // Download uploaded bytes to validate and normalize
+    const { data: fileBlob, error: downloadError } = await supabase.storage
+      .from(config.SUPABASE_STORAGE_BUCKET)
+      .download(parsed.data.objectKey);
+
+    if (downloadError || !fileBlob) {
+      throw new HttpError('Не удалось прочитать загруженный файл из хранилища.', 'STORAGE_DOWNLOAD_FAILED', 502, true);
+    }
+
+    const rawBuffer = Buffer.from(await fileBlob.arrayBuffer());
+
+    // Validate format, magic bytes, dimensions, and normalize
+    let normalized;
+    try {
+      normalized = await validateAndNormalizeImage(rawBuffer);
+    } catch (normError) {
+      // Clean up invalid object from storage
+      await supabase.storage.from(config.SUPABASE_STORAGE_BUCKET).remove([parsed.data.objectKey]);
+      throw normError;
+    }
+
+    // Upload immutable normalized PNG asset
+    const normalizedKey = `${user.id}/${documentId}/normalized-${crypto.randomUUID()}.png`;
+    const { error: normalizedUploadError } = await supabase.storage
+      .from(config.SUPABASE_STORAGE_BUCKET)
+      .upload(normalizedKey, normalized.normalizedBuffer, {
+        contentType: 'image/png',
+        upsert: true,
+      });
+
+    if (normalizedUploadError) {
+      throw new HttpError('Не удалось сохранить нормализованное изображение.', 'NORMALIZED_UPLOAD_FAILED', 503, true);
+    }
+
+    // Insert source asset
     const { data: asset, error: assetError } = await supabase
       .from('assets')
       .insert({
@@ -123,44 +167,76 @@ export async function POST(
         kind: 'source',
         mime: parsed.data.mime,
         bytes: actualBytes,
-        checksum: fileMeta.id || 'verified',
+        checksum: normalized.sourceChecksum,
         state: 'committed',
       })
       .select()
       .single();
+
     if (assetError || !asset) {
-      throw new HttpError('Не удалось сохранить сведения о файле.', 'ASSET_CREATION_FAILED', 503, true);
+      throw new HttpError('Не удалось сохранить сведения об исходном файле.', 'ASSET_CREATION_FAILED', 503, true);
     }
 
+    // Insert normalized asset
+    const { data: normalizedAsset, error: normAssetError } = await supabase
+      .from('assets')
+      .insert({
+        document_id: documentId,
+        owner_id: user.id,
+        object_key: normalizedKey,
+        kind: 'normalized',
+        mime: 'image/png',
+        bytes: normalized.normalizedBuffer.length,
+        checksum: normalized.normalizedChecksum,
+        state: 'committed',
+      })
+      .select()
+      .single();
+
+    if (normAssetError || !normalizedAsset) {
+      throw new HttpError('Не удалось сохранить сведения о нормализованном файле.', 'NORMALIZED_ASSET_FAILED', 503, true);
+    }
+
+    // Create Page record linking source and normalized asset
     const { data: page, error: pageError } = await supabase
       .from('pages')
       .insert({
         document_id: documentId,
         source_asset_id: asset.id,
-        width: 0,
-        height: 0,
+        normalized_asset_id: normalizedAsset.id,
+        width: normalized.normalizedWidth,
+        height: normalized.normalizedHeight,
         image_revision: 1,
       })
       .select('id')
       .single();
+
     if (pageError || !page) {
-      await supabase.from('assets').delete().eq('id', asset.id).eq('owner_id', user.id);
+      await supabase.from('assets').delete().in('id', [asset.id, normalizedAsset.id]).eq('owner_id', user.id);
       throw new HttpError('Не удалось создать страницу документа.', 'PAGE_CREATION_FAILED', 503, true);
     }
 
+    // Update Document state to uploaded
     const { error: documentUpdateError } = await supabase
       .from('documents')
       .update({ state: 'uploaded', bytes: actualBytes })
       .eq('id', documentId)
       .eq('owner_id', user.id);
-    if (documentUpdateError) throw new HttpError('Не удалось завершить загрузку.', 'DOCUMENT_UPDATE_FAILED', 503, true);
+
+    if (documentUpdateError) {
+      throw new HttpError('Не удалось завершить загрузку.', 'DOCUMENT_UPDATE_FAILED', 503, true);
+    }
 
     return jsonNoStore({
       success: true,
       documentId,
       pageId: page.id,
       assetId: asset.id,
+      normalizedAssetId: normalizedAsset.id,
       asset: toAssetDto(asset as unknown as Record<string, unknown>),
+      normalizedAsset: toAssetDto(normalizedAsset as unknown as Record<string, unknown>),
+      width: normalized.normalizedWidth,
+      height: normalized.normalizedHeight,
       bytes: actualBytes,
       idempotent: false,
     });
@@ -168,3 +244,4 @@ export async function POST(
     return errorResponse(error);
   }
 }
+

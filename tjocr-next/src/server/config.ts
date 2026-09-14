@@ -36,6 +36,15 @@ export type AppConfig = z.infer<typeof envSchema>;
 
 let parsedConfig: AppConfig | null = null;
 
+function resolveAppUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const port = process.env.PORT;
+  if (port && (!envUrl || envUrl.includes('localhost:3000') || envUrl.includes('127.0.0.1:3000'))) {
+    return `http://localhost:${port}`;
+  }
+  return envUrl || (port ? `http://localhost:${port}` : 'http://localhost:3000');
+}
+
 export function getServerConfig(): AppConfig {
   if (parsedConfig) {
     return parsedConfig;
@@ -58,7 +67,7 @@ export function getServerConfig(): AppConfig {
     OCR_API_KEY: process.env.OCR_API_KEY || process.env.OPENROUTER_API_KEY,
     OCR_MODEL_ID: process.env.OCR_MODEL_ID || process.env.HTR_OCR_MODEL,
     DETECTOR_MODEL_ID: process.env.DETECTOR_MODEL_ID,
-    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+    NEXT_PUBLIC_APP_URL: resolveAppUrl(),
     NODE_ENV: process.env.NODE_ENV || 'development',
   });
 
@@ -75,6 +84,6 @@ export function getPublicConfig() {
   return {
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
     supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_KEY || '',
-    appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+    appUrl: resolveAppUrl(),
   };
 }

@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { useLocale } from '@/components/app-shell';
 import FileUpload05, { type FileUploadState } from '@/components/block/FileUpload/fileupload-05/fileupload';
@@ -118,6 +119,7 @@ function uploadToSignedUrl(
 
 export default function NewDocumentPage() {
   const { dictionary: t } = useLocale();
+  const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadState, setUploadState] = useState<FileUploadState>('idle');
@@ -179,6 +181,9 @@ export default function NewDocumentPage() {
 
       setUploadProgress(100);
       setUploadState('complete');
+      window.setTimeout(() => {
+        router.push(`/app/documents/${createData.document.id}/upload`);
+      }, 400);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return;
       console.error('[TJOCR upload]', error);
