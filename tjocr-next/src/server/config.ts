@@ -26,6 +26,8 @@ const envSchema = z.object({
   OCR_API_KEY: z.string().min(1).optional(),
   OCR_MODEL_ID: z.string().min(1).optional(),
   DETECTOR_MODEL_ID: z.string().min(1).optional(),
+  RECOGNIZER_MODEL_ID: z.string().min(1).optional(),
+  RECOGNITION_BATCH_SIZE: z.coerce.number().int().positive().default(5),
 
   // App settings
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
@@ -67,6 +69,8 @@ export function getServerConfig(): AppConfig {
     OCR_API_KEY: process.env.OCR_API_KEY || process.env.OPENROUTER_API_KEY,
     OCR_MODEL_ID: process.env.OCR_MODEL_ID || process.env.HTR_OCR_MODEL,
     DETECTOR_MODEL_ID: process.env.DETECTOR_MODEL_ID,
+    RECOGNIZER_MODEL_ID: process.env.RECOGNIZER_MODEL_ID || process.env.OCR_MODEL_ID || process.env.HTR_OCR_MODEL,
+    RECOGNITION_BATCH_SIZE: process.env.RECOGNITION_BATCH_SIZE || 5,
     NEXT_PUBLIC_APP_URL: resolveAppUrl(),
     NODE_ENV: process.env.NODE_ENV || 'development',
   });

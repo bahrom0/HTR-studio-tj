@@ -124,3 +124,22 @@ export interface PageDto {
   createdAt: string;
 }
 
+export interface LineResultDto {
+  id: string;
+  jobId: string;
+  regionId: string;
+  cropAssetId: string | null;
+  attempt: number;
+  rawText: string;
+  status: 'succeeded' | 'failed';
+  createdAt: string;
+  readingOrder?: number;
+  geometry?: RegionGeometry;
+  editedText?: string;
+}
+
+export interface RecognitionJobResponse {
+  job: JobDto;
+  alreadyRunning: boolean;
+}
+
