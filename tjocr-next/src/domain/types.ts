@@ -85,3 +85,42 @@ export interface CreateDocumentResponse {
     resetAt: string;
   };
 }
+
+export interface RegionGeometry {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  polygon?: Array<{ x: number; y: number }>;
+}
+
+export interface RegionDto {
+  id: string;
+  revisionId: string;
+  readingOrder: number;
+  geometry: RegionGeometry;
+  excluded: boolean;
+  createdAt: string;
+}
+
+export interface RegionRevisionDto {
+  id: string;
+  pageId: string;
+  revisionNumber: number;
+  imageRevision: number;
+  confirmedAt: string | null;
+  createdAt: string;
+  regions: RegionDto[];
+}
+
+export interface PageDto {
+  id: string;
+  documentId: string;
+  sourceAssetId: string | null;
+  normalizedAssetId: string | null;
+  width: number;
+  height: number;
+  imageRevision: number;
+  createdAt: string;
+}
+

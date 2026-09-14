@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/run-server.mjs dev",
+    "dev:open": "node scripts/run-server.mjs dev --open",
+    "start": "node scripts/run-server.mjs start",
+    "start:open": "node scripts/run-server.mjs start --open",
+    "dev:direct": "next dev",
+    "start:direct": "next start",
     "build": "next build",
-    "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/stage2-contract.test.mjs"
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",

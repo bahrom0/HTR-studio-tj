@@ -5,6 +5,7 @@ import { Moon, Sun } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { dictionaries, type Dictionary, type Locale } from '@/i18n';
+import { SplashScreen } from '@/components/ui/splash-screen';
 
 type Theme = 'light' | 'dark';
 
@@ -86,17 +87,22 @@ export function useLocale() {
   return value;
 }
 
-function Brand() {
-  const { dictionary: t } = useLocale();
+export function Brand({ compact = false }: { compact?: boolean }) {
+  const { dictionary: t, theme } = useLocale();
 
   return (
     <Link className="brand" href="/" aria-label={t.common.brandLabel}>
-      <span className="brand-word">TJOCR</span>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={theme === 'dark' ? '/logo-dark.png' : '/logo-light.png'}
+        alt="TJOCR"
+        className={compact ? 'h-6 sm:h-7 w-auto object-contain select-none' : 'h-8 sm:h-9 w-auto object-contain select-none'}
+      />
     </Link>
   );
 }
 
-function LocaleAndThemeControls() {
+export function LocaleAndThemeControls() {
   const { locale, theme, dictionary: t, setLocale, toggleTheme } = useLocale();
 
   return (
@@ -136,30 +142,34 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const pathname = usePathname();
   const { dictionary: t } = useLocale();
   const isLanding = pathname === '/';
+  const isDocumentWorkspace = pathname.startsWith('/app/documents/');
 
   return (
     <>
+      <SplashScreen />
       <a className="skip-link" href="#main-content">
         {t.common.skipToContent}
       </a>
-      <header className="site-header">
-        <div className="site-header__inner">
-          <Brand />
-          <nav className="site-nav" aria-label={t.nav.primary}>
-            {isLanding ? (
-              <a href="#process">{t.nav.howItWorks}</a>
-            ) : (
-              <Link className={pathname === '/app' ? 'site-nav__active' : undefined} href="/app">
-                {t.nav.home}
+      {!isDocumentWorkspace && (
+        <header className="site-header">
+          <div className="site-header__inner">
+            <Brand />
+            <nav className="site-nav" aria-label={t.nav.primary}>
+              {isLanding ? (
+                <a href="#process">{t.nav.howItWorks}</a>
+              ) : (
+                <Link className={pathname === '/app' ? 'site-nav__active' : undefined} href="/app">
+                  {t.nav.home}
+                </Link>
+              )}
+              <Link className={pathname.startsWith('/auth') ? 'site-nav__active' : undefined} href="/auth">
+                {t.nav.account}
               </Link>
-            )}
-            <Link className={pathname.startsWith('/auth') ? 'site-nav__active' : undefined} href="/auth">
-              {t.nav.account}
-            </Link>
-          </nav>
-          <LocaleAndThemeControls />
-        </div>
-      </header>
+            </nav>
+            <LocaleAndThemeControls />
+          </div>
+        </header>
+      )}
       <main id="main-content">{children}</main>
     </>
   );
