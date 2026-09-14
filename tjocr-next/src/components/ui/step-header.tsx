@@ -90,7 +90,7 @@ export function StepHeader({
             {STEPS.map((step, idx) => {
               const isCurrent = step.number === currentStep;
               const isPassed = step.number < currentStep;
-              const isAccessible = Boolean(documentId && (step.number <= 3 || isPassed));
+              const isAccessible = Boolean(documentId && (step.number <= currentStep || isPassed));
               const stepName = t.document[step.nameKey];
               const stepUrl = documentId ? `/app/documents/${documentId}/${step.slug}` : undefined;
 

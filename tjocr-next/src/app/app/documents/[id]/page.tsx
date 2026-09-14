@@ -21,7 +21,9 @@ export default function DocumentHubPage() {
       })
       .then((payload) => {
         const state = payload.document?.state;
-        if (state === 'lines_ready') {
+        if (state === 'completed' || state === 'recognizing') {
+          router.replace(`/app/documents/${params.id}/recognize`);
+        } else if (state === 'lines_ready') {
           router.replace(`/app/documents/${params.id}/lines`);
         } else if (state === 'detecting') {
           router.replace(`/app/documents/${params.id}/detect`);
