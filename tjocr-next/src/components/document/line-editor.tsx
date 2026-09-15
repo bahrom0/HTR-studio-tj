@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RegionDto } from '@/domain/types';
+import { CachedImage } from '@/components/ui/cached-image';
 
 export interface LineEditorProps {
   imageUrl: string;
@@ -366,8 +367,7 @@ export function LineEditor({
         }}
       >
         {/* Document scan image */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <CachedImage
           src={imageUrl}
           alt="Документ"
           width={safeW}

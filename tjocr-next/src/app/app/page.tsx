@@ -5,6 +5,7 @@ import { ArrowRight, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/app-shell';
 import { DocumentList, type DocumentListItem } from '@/components/ui/document-list';
+import { SiteLoader } from '@/components/ui/site-loader';
 
 type Quota = {
   usedDocuments: number;
@@ -63,11 +64,11 @@ export default function HomePage() {
     };
   }, [locale]);
 
-  const sectionMeta = isLoading
-    ? t.common.loading
-    : quota
-      ? `${t.home.quotaLabel}: ${Math.max(0, quota.maxDocuments - quota.usedDocuments)}/${quota.maxDocuments}`
-      : t.home.emptyLabel;
+  if (isLoading) return <SiteLoader />;
+
+  const sectionMeta = quota
+    ? `${t.home.quotaLabel}: ${Math.max(0, quota.maxDocuments - quota.usedDocuments)}/${quota.maxDocuments}`
+    : t.home.emptyLabel;
 
   return (
     <div className="workspace-page">
@@ -88,21 +89,13 @@ export default function HomePage() {
           <div>
             <h2 id="documents-title">{t.home.recentTitle}</h2>
           </div>
-          {isLoading ? (
-            <div className="section-meta section-meta--loading" aria-label={t.common.loading}>
-              <span className="skeleton-shimmer section-meta-skeleton" aria-hidden="true" />
-              <span className="sr-only">{t.common.loading}</span>
-            </div>
-          ) : (
-            <span className="section-meta">{sectionMeta}</span>
-          )}
+          <span className="section-meta">{sectionMeta}</span>
         </div>
 
         {loadError ? <p className="documents-error" role="status">{t.home.loadError}</p> : null}
 
         <DocumentList
           documents={documents}
-          isLoading={isLoading}
           ariaLabel={t.nav.documents}
           continueLabel={t.common.continue}
           emptyLabel={t.home.empty}

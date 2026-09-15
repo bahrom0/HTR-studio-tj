@@ -5,15 +5,10 @@ import { ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import { useLocale } from '@/components/app-shell';
 
-const sampleRows = {
-  ru: ['Здесь начинается история', 'текста, который можно сохранить.', 'Проверьте каждую строку.'],
-  tg: ['Ин ҷо таърихи матн', 'оғоз мешавад.', 'Ҳар сатрро санҷед.'],
-} as const;
-
 export function LandingPage() {
-  const { dictionary: t, locale } = useLocale();
+  const { dictionary: t } = useLocale();
   const [selectedLine, setSelectedLine] = useState(0);
-  const lines = sampleRows[locale];
+  const lines = t.landing.previewLines;
 
   return (
     <div className="landing-page">

@@ -33,6 +33,11 @@
     "secondaryAction": "Посмотреть процесс",
     "previewLabel": "Статический пример",
     "previewLinesLabel": "Пример строк документа",
+    "previewLines": [
+      "Здесь начинается история",
+      "текста, который можно сохранить.",
+      "Проверьте каждую строку."
+    ],
     "previewResultLabel": "Фрагмент результата",
     "previewCaption": "Выбранная строка остаётся связана с оригиналом.",
     "previewNote": "Пример интерфейса · не результат распознавания",
@@ -117,7 +122,8 @@
     "recognizingSubtitle": "Модель расшифровывает рукописный текст по строкам в естественном порядке чтения.",
     "recognizeCompleted": "Распознавание завершено",
     "recognizePartial": "Распознавание завершено с ошибками некоторых строк",
-    "recognizeFailed": "Не удалось распознать строки",
+      "recognizeFailed": "Не удалось распознать строки",
+      "recognizeCancelled": "Распознавание отменено",
     "openResultAction": "Перейти к результатам",
     "retryFailedLinesAction": "Повторить неудачные строки",
     "recognizeStarting": "Подготовка к распознаванию…",
@@ -127,7 +133,13 @@
     "lineStatusPending": "В очереди",
     "lineStatusProcessing": "Распознаётся…",
     "lineStatusSuccess": "Готово",
-    "lineStatusFailed": "Ошибка"
+    "lineStatusFailed": "Ошибка",
+    "cancelRecognition": "Отменить распознавание",
+    "cancellingRecognition": "Отмена распознавания…",
+      "retryFailedLines": "Повторить нераспознанные строки",
+      "restartRecognition": "Запустить заново",
+    "scanLabel": "Скан",
+    "emptyRecognizedLine": "Пустая строка"
   },
   "newDocument": {
     "title": "Загрузить изображение",

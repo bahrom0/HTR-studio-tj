@@ -23,6 +23,7 @@ import {
 import { useLocale } from '@/components/app-shell';
 import { StepHeader } from '@/components/ui/step-header';
 import { Status } from '@/components/ui/status';
+import { SiteLoader } from '@/components/ui/site-loader';
 import { Button } from '@/components/ui/button';
 import { RegionDto, RegionRevisionDto } from '@/domain/types';
 import { LineEditor } from '@/components/document/line-editor';
@@ -261,13 +262,7 @@ export default function DocumentLinesPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="document-page">
-        <section className="page-width py-12">
-          <Status variant="loading">{t.common.loading}</Status>
-        </section>
-      </div>
-    );
+    return <SiteLoader />;
   }
 
   if (loadError || !details) {

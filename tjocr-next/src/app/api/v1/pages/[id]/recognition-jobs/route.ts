@@ -3,6 +3,9 @@ import { createServerSupabaseClient } from '@/server/supabase/server';
 import { requireUser } from '@/server/auth/session';
 import { assertSameOrigin, errorResponse, jsonNoStore } from '@/server/security/request';
 import { RecognitionJobService } from '@/server/recognition/service';
+import { scheduleRecognitionFastPath } from '@/server/recognition/fast-path';
+
+export const maxDuration = 60;
 
 export async function POST(
   request: NextRequest,
@@ -32,34 +35,7 @@ export async function POST(
     );
 
     if (!alreadyRunning) {
-      try {
-        const completedJob = await RecognitionJobService.executeRecognition(
-          job.id,
-          user.id,
-          supabase,
-        );
-        return jsonNoStore(
-          {
-            success: true,
-            jobId: completedJob.id,
-            status: completedJob.status,
-            completedCount: completedJob.completedCount,
-            failedCount: completedJob.failedCount,
-            totalCount: completedJob.totalCount,
-          },
-          { status: 202 },
-        );
-      } catch (execError) {
-        return jsonNoStore(
-          {
-            success: false,
-            jobId: job.id,
-            status: 'failed',
-            error: execError instanceof Error ? execError.message : 'Recognition failed',
-          },
-          { status: 202 },
-        );
-      }
+      scheduleRecognitionFastPath(job.id);
     }
 
     return jsonNoStore(
@@ -67,6 +43,7 @@ export async function POST(
         success: true,
         jobId: job.id,
         status: job.status,
+        alreadyRunning,
         completedCount: job.completedCount,
         failedCount: job.failedCount,
         totalCount: job.totalCount,

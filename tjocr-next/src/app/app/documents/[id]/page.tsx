@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useLocale } from '@/components/app-shell';
 import { Status } from '@/components/ui/status';
+import { SiteLoader } from '@/components/ui/site-loader';
 
 export default function DocumentHubPage() {
   const { dictionary: t } = useLocale();
@@ -48,11 +49,5 @@ export default function DocumentHubPage() {
     );
   }
 
-  return (
-    <div className="document-page">
-      <section className="page-width py-12">
-        <Status variant="loading">{t.common.loading}</Status>
-      </section>
-    </div>
-  );
+  return <SiteLoader />;
 }

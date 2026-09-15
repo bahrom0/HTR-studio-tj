@@ -33,6 +33,11 @@
     "secondaryAction": "Равандро дидан",
     "previewLabel": "Намунаи статикӣ",
     "previewLinesLabel": "Намунаи сатрҳои ҳуҷҷат",
+    "previewLines": [
+      "Ин ҷо таърихи матн",
+      "оғоз мешавад.",
+      "Ҳар сатрро санҷед."
+    ],
     "previewResultLabel": "Пораи натиҷа",
     "previewCaption": "Сатри интихобшуда бо нусхаи аслӣ пайваст мемонад.",
     "previewNote": "Намунаи интерфейс · натиҷаи шинохт нест",
@@ -117,7 +122,8 @@
     "recognizingSubtitle": "Модел матни дастиро сатр ба сатр бо тартиби табиии хониш муайян мекунад.",
     "recognizeCompleted": "Шинохтани матн анҷом ёфт",
     "recognizePartial": "Шинохтан бо хатогиҳои баъзе сатрҳо анҷом ёфт",
-    "recognizeFailed": "Шинохтани сатрҳо муяссар нашуд",
+      "recognizeFailed": "Шинохтани сатрҳо муяссар нашуд",
+      "recognizeCancelled": "Шинохтан қатъ шуд",
     "openResultAction": "Гузаштан ба натиҷаҳо",
     "retryFailedLinesAction": "Такрори сатрҳои нобарор",
     "recognizeStarting": "Омодагӣ ба шинохтан…",
@@ -127,7 +133,13 @@
     "lineStatusPending": "Дар навбат",
     "lineStatusProcessing": "Шинохта истодааст…",
     "lineStatusSuccess": "Тайёр",
-    "lineStatusFailed": "Хато"
+    "lineStatusFailed": "Хато",
+    "cancelRecognition": "Қатъ кардани шинохтан",
+    "cancellingRecognition": "Шинохтан қатъ мешавад…",
+      "retryFailedLines": "Такрори сатрҳои ношинохташуда",
+      "restartRecognition": "Аз нав оғоз кардан",
+    "scanLabel": "Скан",
+    "emptyRecognizedLine": "Сатри холӣ"
   },
   "newDocument": {
     "title": "Тасвирро бор кунед",

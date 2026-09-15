@@ -8,6 +8,8 @@ import { useLocale } from '@/components/app-shell';
 import { StepHeader } from '@/components/ui/step-header';
 import { Button } from '@/components/ui/button';
 import { Status } from '@/components/ui/status';
+import { SiteLoader } from '@/components/ui/site-loader';
+import { CachedImage } from '@/components/ui/cached-image';
 import { LineOverlay } from '@/components/document/line-overlay';
 import { RegionDto } from '@/domain/types';
 
@@ -100,13 +102,7 @@ export default function DocumentDetectPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="document-page">
-        <section className="page-width py-12">
-          <Status variant="loading">{t.common.loading}</Status>
-        </section>
-      </div>
-    );
+    return <SiteLoader />;
   }
 
   if (!details) {
@@ -173,7 +169,7 @@ export default function DocumentDetectPage() {
             {previewUrl ? (
               <div className="mt-4 max-w-sm opacity-60 rounded border border-border overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={previewUrl} alt={doc.title} className="w-full h-auto object-contain" />
+                <CachedImage src={previewUrl} alt={doc.title} className="w-full h-auto object-contain" />
               </div>
             ) : null}
             <div className="mt-2">
@@ -262,7 +258,7 @@ export default function DocumentDetectPage() {
             {previewUrl ? (
               <div className="max-w-xs rounded border border-border overflow-hidden my-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={previewUrl} alt={doc.title} className="w-full h-auto object-contain" />
+                <CachedImage src={previewUrl} alt={doc.title} className="w-full h-auto object-contain" />
               </div>
             ) : null}
             <div className="flex items-center gap-3 mt-2">

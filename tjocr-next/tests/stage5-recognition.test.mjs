@@ -60,12 +60,59 @@ test('Stage 5 Recognition components and routes exist and are properly structure
     'src/app/api/v1/pages/[id]/recognition-jobs/route.ts',
     'src/app/api/v1/documents/[id]/line-results/route.ts',
     'src/app/app/documents/[id]/recognize/page.tsx',
+    'src/app/api/v1/jobs/[id]/cancel/route.ts',
+    'src/app/api/v1/maintenance/reconcile-recognition/route.ts',
+    'src/workflows/recognition.ts',
   ];
 
   for (const relPath of expectedFiles) {
     const fullPath = path.join(rootDir, relPath);
     assert.ok(fs.existsSync(fullPath), `File exists: ${relPath}`);
   }
+});
+
+test('Recognition dispatch is durable and guards duplicate, failed, and cancelled work', () => {
+  const read = (relativePath) => fs.readFileSync(path.join(rootDir, relativePath), 'utf8');
+  const startRoute = read('src/app/api/v1/pages/[id]/recognition-jobs/route.ts');
+  const workflow = read('src/workflows/recognition.ts');
+  const reconcileRoute = read('src/app/api/v1/maintenance/reconcile-recognition/route.ts');
+  const service = read('src/server/recognition/service.ts');
+  const recognizer = read('src/server/recognition/recognizer.ts');
+  const config = read('src/server/config.ts');
+  const retryRoute = read('src/app/api/v1/jobs/[id]/retry/route.ts');
+  const recognizePage = read('src/app/app/documents/[id]/recognize/page.tsx');
+
+  assert.match(workflow, /'use workflow'/, 'OCR runs in a durable workflow');
+  assert.match(workflow, /'use step'/, 'OCR work executes inside a retryable step');
+  assert.match(startRoute, /scheduleRecognitionFastPath/, 'the HTTP response schedules only the fast worker');
+  assert.doesNotMatch(startRoute, /start\(runRecognitionWorkflow/, 'the local Workflow dispatcher cannot delay interactive OCR');
+  assert.match(reconcileRoute, /start\(runRecognitionWorkflow/, 'the durable Workflow remains an outbox recovery path');
+  assert.match(reconcileRoute, /dispatch_state: 'pending'/, 'a dispatched recovery remains durable until its worker finishes');
+  assert.doesNotMatch(reconcileRoute, /workflow_id: run\.runId, updated_at/, 'recovery keeps an abandoned job stale until the workflow claims it');
+  assert.match(service, /idempotency_key/, 'duplicate starts use the persisted idempotency key');
+  assert.match(service, /JOB_CLAIM_FAILED/, 'a queued job is claimed by only one workflow execution');
+  assert.match(service, /LINE_RESULT_PERSIST_FAILED/, 'a failed result write cannot become false success');
+  assert.match(service, /batchResults\.map\(\(res\)/, 'each OCR batch is persisted in one database write');
+  assert.match(service, /RECOGNITION_WORKER_CONFIG_MISSING/, 'a missing worker secret fails before a job can get stuck');
+  assert.match(service, /hasSupabaseServerKey/, 'a publishable Supabase key cannot run OCR jobs');
+  assert.match(service, /cancelling/, 'the worker checks cancellation between bounded batches');
+  assert.match(service, /retryRegionIds/, 'retry plans contain only failed region ids');
+  assert.match(retryRoute, /retryRecognitionJob/, 'retry endpoint uses recognition-specific failed-line retry');
+  assert.match(recognizer, /Idempotency-Key/, 'remote batch requests carry an idempotency key');
+  assert.match(recognizer, /RECOGNIZER_TIMEOUT/, 'a slow provider is bounded by a server timeout');
+  assert.match(recognizer, /max_tokens/, 'batch output has a bounded token budget');
+  assert.match(recognizer, /preferred_max_latency/, 'OpenRouter routing de-prioritises slow endpoints');
+  assert.match(recognizer, /preferred_min_throughput/, 'OpenRouter routing prefers fast endpoints');
+  assert.match(recognizer, /google-ai-studio\/flex/, 'OCR is pinned to the fast Google AI Studio Flex endpoint');
+  assert.match(recognizer, /allow_fallbacks: false/, 'a slow provider cannot silently replace the selected endpoint');
+  assert.match(recognizer, /\[ocr:openrouter\]/, 'safe provider timing telemetry is written to server logs');
+  assert.match(service, /attempt:\$\{attempt\}:batch/, 'each batch derives its key from the persisted attempt');
+  assert.match(recognizer, /RECOGNIZER_INVALID_RESULT_SET/, 'missing or duplicate provider line ids are rejected');
+  assert.match(recognizePage, /hasProgressChange/, 'the UI does not refetch all line results when job progress is unchanged');
+  assert.match(config, /RECOGNITION_BATCH_SIZE.*default\(4\)/, 'default OCR provider batches contain four lines');
+  assert.match(config, /RECOGNITION_BATCH_CONCURRENCY.*default\(2\)/, 'at most two OCR provider batches run in parallel');
+  assert.match(service, /pendingResults = activeBatches\.map/, 'both provider requests are started before the first result is awaited');
+  assert.match(service, /await Promise\.all\(pendingResults\)/, 'a parallel pair is persisted after both provider requests settle');
 });
 
 test('RU and TG dictionaries maintain contract parity including Stage 5 recognition keys', () => {
@@ -92,6 +139,13 @@ test('RU and TG dictionaries maintain contract parity including Stage 5 recognit
     'lineStatusProcessing',
     'lineStatusSuccess',
     'lineStatusFailed',
+    'cancelRecognition',
+    'cancellingRecognition',
+    'retryFailedLines',
+    'scanLabel',
+    'emptyRecognizedLine',
+    'recognizeCancelled',
+    'restartRecognition',
   ];
 
   for (const key of stage5Keys) {

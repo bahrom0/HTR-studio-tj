@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { RegionDto } from '@/domain/types';
+import { CachedImage } from '@/components/ui/cached-image';
 
 export interface LineOverlayProps {
   imageUrl: string;
@@ -31,8 +32,7 @@ export const LineOverlay: React.FC<LineOverlayProps> = ({
       style={{ aspectRatio: `${safeWidth} / ${safeHeight}` }}
     >
       {/* Normalized page image */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <CachedImage
         src={imageUrl}
         alt="Документ"
         className="block h-full w-full object-contain pointer-events-none select-none"
