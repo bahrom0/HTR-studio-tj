@@ -8,7 +8,9 @@ import { useLocale } from '@/components/app-shell';
 import { StepHeader } from '@/components/ui/step-header';
 import { Button } from '@/components/ui/button';
 import { Status } from '@/components/ui/status';
+import { SiteLoader } from '@/components/ui/site-loader';
 import FileUpload05, { type FileUploadState } from '@/components/block/FileUpload/fileupload-05/fileupload';
+import { CachedImage } from '@/components/ui/cached-image';
 
 type DocumentDetails = {
   document: {
@@ -158,13 +160,7 @@ export default function DocumentUploadPage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="document-page">
-        <section className="page-width py-12">
-          <Status variant="loading">{t.common.loading}</Status>
-        </section>
-      </div>
-    );
+    return <SiteLoader />;
   }
 
   if (loadError || !details) {
@@ -217,7 +213,7 @@ export default function DocumentUploadPage() {
             <div className="relative rounded-md border border-border bg-surface p-3 sm:p-4 flex flex-col items-center justify-center">
               <div className="max-h-[600px] w-full overflow-hidden rounded border border-border/50 bg-background flex items-center justify-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <CachedImage
                   src={previewUrl!}
                   alt={doc.title}
                   className="max-h-[580px] w-auto max-w-full object-contain select-none"

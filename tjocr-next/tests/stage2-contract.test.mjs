@@ -23,7 +23,9 @@ test('stage 2 migration contains quota, retention and Storage safeguards', async
 test('privileged Supabase client never falls back to a public key', async () => {
   const source = await read('src/server/supabase/admin.ts');
   assert.doesNotMatch(source, /\|\|\s*config\.NEXT_PUBLIC_SUPABASE_ANON_KEY/);
-  assert.match(source, /SUPABASE_SERVICE_ROLE_KEY is required/);
+  assert.match(source, /SUPABASE_SECRET_KEY\s*\|\|\s*config\.SUPABASE_SERVICE_ROLE_KEY/);
+  assert.match(source, /hasSupabaseServerKey/);
+  assert.match(source, /sb_secret key or legacy service_role key is required/);
 });
 
 test('all account routes are present and use the shared protection helpers', async () => {

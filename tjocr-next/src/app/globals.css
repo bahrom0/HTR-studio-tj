@@ -16,7 +16,7 @@
   --color-danger-text: #b42318;
   --color-success-text: #137333;
   --page-gutter: 32px;
-  --site-header-height: 52px;
+  --site-header-height: 64px;
 }
 
 :root.dark {
@@ -1535,7 +1535,82 @@ button {
   }
 }
 
-/* Windows 11 Indeterminate Loader */
+/* Full-page route/data loader */
+.site-loader {
+  display: flex;
+  min-height: calc(100dvh - var(--site-header-height));
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 48px 24px;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+.site-loader__logo {
+  display: block;
+  width: clamp(128px, 22vw, 184px);
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+  animation: site-loader-logo 1.8s ease-in-out infinite;
+}
+
+.site-loader__track {
+  position: relative;
+  width: 128px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.site-loader__bar {
+  position: absolute;
+  inset: 0 auto 0 -42%;
+  width: 42%;
+  border-radius: inherit;
+  background: var(--color-primary-bg);
+  animation: site-loader-progress 1.45s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes site-loader-logo {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.98);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes site-loader-progress {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-loader__logo,
+  .site-loader__bar {
+    animation: none;
+  }
+
+  .site-loader__logo {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Windows 11 Indeterminate Loader (button/test utility) */
 .win11-loader {
   width: 140px;
   height: 3px;

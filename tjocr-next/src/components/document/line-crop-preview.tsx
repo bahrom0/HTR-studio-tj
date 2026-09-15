@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { RegionGeometry } from '@/domain/types';
+import { resolveCachedImage } from '@/lib/image-cache';
 
 export interface LineCropPreviewProps {
   imageUrl: string;
@@ -24,26 +25,44 @@ export function LineCropPreview({
   const [imageLoaded, setImageLoaded] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
 
-  // Load and cache image
+  // Resolve the signed URL through the persistent browser image cache.
   useEffect(() => {
-    if (!imageUrl) return;
+    let disposed = false;
+    let revoke: (() => void) | null = null;
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = imageUrl;
-
-    img.onload = () => {
-      imgRef.current = img;
-      setImageLoaded(true);
-    };
-
-    img.onerror = () => {
+    if (!imageUrl) {
+      imgRef.current = null;
       setImageLoaded(false);
-    };
+      return () => {
+        disposed = true;
+      };
+    }
+
+    setImageLoaded(false);
+    resolveCachedImage(imageUrl).then((resource) => {
+      revoke = resource.revoke;
+      if (disposed) {
+        resource.revoke();
+        return;
+      }
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        if (disposed) return;
+        imgRef.current = img;
+        setImageLoaded(true);
+      };
+      img.onerror = () => {
+        if (!disposed) setImageLoaded(false);
+      };
+      img.src = resource.url;
+    });
 
     return () => {
-      img.onload = null;
-      img.onerror = null;
+      disposed = true;
+      imgRef.current = null;
+      revoke?.();
     };
   }, [imageUrl]);
 

@@ -3,6 +3,10 @@
     {
       "path": "/api/v1/maintenance/cleanup",
       "schedule": "17 * * * *"
+    },
+    {
+      "path": "/api/v1/maintenance/reconcile-recognition",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

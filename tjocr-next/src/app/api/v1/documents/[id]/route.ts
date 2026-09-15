@@ -14,11 +14,10 @@ const patchDocumentSchema = z.object({
 });
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    assertSameOrigin(request);
     const { id: documentId } = await params;
     const config = getServerConfig();
     const supabase = await createServerSupabaseClient();

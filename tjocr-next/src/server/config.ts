@@ -7,6 +7,7 @@ const envSchema = z.object({
 
   // Supabase server secret
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+  SUPABASE_SECRET_KEY: z.string().min(1).optional(),
   SUPABASE_STORAGE_BUCKET: z.string().default('htr-uploads'),
 
   // Upload and retention guardrails. Quota values are enforced again in the
@@ -27,7 +28,14 @@ const envSchema = z.object({
   OCR_MODEL_ID: z.string().min(1).optional(),
   DETECTOR_MODEL_ID: z.string().min(1).optional(),
   RECOGNIZER_MODEL_ID: z.string().min(1).optional(),
-  RECOGNITION_BATCH_SIZE: z.coerce.number().int().positive().default(5),
+  RECOGNITION_BATCH_SIZE: z.coerce.number().int().min(1).max(16).default(4),
+  RECOGNITION_BATCH_CONCURRENCY: z.coerce.number().int().min(1).max(2).default(2),
+  OCR_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(60_000).default(20_000),
+  OCR_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(128).max(4_096).default(1_024),
+  OCR_REASONING_EFFORT: z.enum(['low', 'medium', 'high']).default('low'),
+  OPENROUTER_OCR_PROVIDER: z.string().min(1).default('google-ai-studio/flex'),
+  OPENROUTER_PREFERRED_MAX_LATENCY_SECONDS: z.coerce.number().min(0.5).max(60).default(5),
+  OPENROUTER_PREFERRED_MIN_THROUGHPUT: z.coerce.number().int().min(1).max(1_000).default(60),
 
   // App settings
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
@@ -56,6 +64,7 @@ export function getServerConfig(): AppConfig {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_KEY,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
     SUPABASE_STORAGE_BUCKET: process.env.SUPABASE_STORAGE_BUCKET || process.env.SUPABASE_BUCKET || 'htr-uploads',
     MAX_UPLOAD_BYTES: process.env.MAX_UPLOAD_BYTES || 10 * 1024 * 1024,
     ANONYMOUS_DOCUMENT_TTL_DAYS: process.env.ANONYMOUS_DOCUMENT_TTL_DAYS || 7,
@@ -70,7 +79,14 @@ export function getServerConfig(): AppConfig {
     OCR_MODEL_ID: process.env.OCR_MODEL_ID || process.env.HTR_OCR_MODEL,
     DETECTOR_MODEL_ID: process.env.DETECTOR_MODEL_ID,
     RECOGNIZER_MODEL_ID: process.env.RECOGNIZER_MODEL_ID || process.env.OCR_MODEL_ID || process.env.HTR_OCR_MODEL,
-    RECOGNITION_BATCH_SIZE: process.env.RECOGNITION_BATCH_SIZE || 5,
+    RECOGNITION_BATCH_SIZE: process.env.RECOGNITION_BATCH_SIZE || 4,
+    RECOGNITION_BATCH_CONCURRENCY: process.env.RECOGNITION_BATCH_CONCURRENCY || 2,
+    OCR_REQUEST_TIMEOUT_MS: process.env.OCR_REQUEST_TIMEOUT_MS || 20_000,
+    OCR_MAX_OUTPUT_TOKENS: process.env.OCR_MAX_OUTPUT_TOKENS || 1_024,
+    OCR_REASONING_EFFORT: process.env.OCR_REASONING_EFFORT || 'low',
+    OPENROUTER_OCR_PROVIDER: process.env.OPENROUTER_OCR_PROVIDER || 'google-ai-studio/flex',
+    OPENROUTER_PREFERRED_MAX_LATENCY_SECONDS: process.env.OPENROUTER_PREFERRED_MAX_LATENCY_SECONDS || 5,
+    OPENROUTER_PREFERRED_MIN_THROUGHPUT: process.env.OPENROUTER_PREFERRED_MIN_THROUGHPUT || 60,
     NEXT_PUBLIC_APP_URL: resolveAppUrl(),
     NODE_ENV: process.env.NODE_ENV || 'development',
   });

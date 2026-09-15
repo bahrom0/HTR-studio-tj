@@ -16,6 +16,7 @@ import { useLocale } from '@/components/app-shell';
 import { StepHeader } from '@/components/ui/step-header';
 import { Button } from '@/components/ui/button';
 import { Status } from '@/components/ui/status';
+import { SiteLoader } from '@/components/ui/site-loader';
 import { JobDto, LineResultDto, RegionDto } from '@/domain/types';
 import { LineCropPreview } from '@/components/document/line-crop-preview';
 
@@ -112,6 +113,34 @@ export default function RecognizePage() {
     }
   }, []);
 
+  const retryFailedLines = useCallback(async () => {
+    if (!job?.id) return;
+    try {
+      setIsStarting(true);
+      const response = await fetch(`/api/v1/jobs/${job.id}/retry`, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.job) throw new Error(data?.error?.messageKey || 'JOB_RETRY_FAILED');
+      setJob(data.job);
+      await fetchLineResults();
+    } catch (error: any) {
+      setPageError(error.message || 'JOB_RETRY_FAILED');
+    } finally {
+      setIsStarting(false);
+    }
+  }, [fetchLineResults, job?.id]);
+
+  const cancelRecognition = useCallback(async () => {
+    if (!job?.id) return;
+    try {
+      const response = await fetch(`/api/v1/jobs/${job.id}/cancel`, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.job) throw new Error(data?.error?.messageKey || 'JOB_CANCEL_FAILED');
+      setJob(data.job);
+    } catch (error: any) {
+      setPageError(error.message || 'JOB_CANCEL_FAILED');
+    }
+  }, [job?.id]);
+
   useEffect(() => {
     if (documentData?.page?.id && !job && !pageError && !isStarting) {
       startOrResumeJob(documentData.page.id);
@@ -134,8 +163,14 @@ export default function RecognizePage() {
         if (res.ok) {
           const data = await res.json();
           if (data.job) {
+            const hasProgressChange =
+              data.job.status !== job.status ||
+              data.job.completedCount !== job.completedCount ||
+              data.job.failedCount !== job.failedCount;
             setJob(data.job);
-            fetchLineResults();
+            if (hasProgressChange || ['succeeded', 'partial', 'failed', 'cancelled'].includes(data.job.status)) {
+              fetchLineResults();
+            }
           }
         }
       } catch {
@@ -149,13 +184,7 @@ export default function RecognizePage() {
   }, [job, fetchLineResults]);
 
   if (loading) {
-    return (
-      <div className="document-page">
-        <section className="page-width py-12">
-          <Status variant="loading">{t.common.loading}</Status>
-        </section>
-      </div>
-    );
+    return <SiteLoader />;
   }
 
   if (pageError || !documentData) {
@@ -179,6 +208,8 @@ export default function RecognizePage() {
   const progressPercent = totalLines > 0 ? Math.min(100, Math.round((processedLines / totalLines) * 100)) : 0;
   const isFinished = job && ['succeeded', 'partial'].includes(job.status);
   const isFailed = job?.status === 'failed';
+  const isCancelled = job?.status === 'cancelled';
+  const isRetryable = isFailed || job?.status === 'partial' || isCancelled;
 
   return (
     <div className="flex flex-col min-h-screen bg-background text-app-text">
@@ -201,7 +232,7 @@ export default function RecognizePage() {
                 <div className="w-10 h-10 rounded-full bg-status-success/15 text-status-success flex items-center justify-center shrink-0">
                   <CheckCircle2 className="w-5 h-5" />
                 </div>
-              ) : isFailed ? (
+              ) : isFailed || isCancelled ? (
                 <div className="w-10 h-10 rounded-full bg-status-danger/15 text-status-danger flex items-center justify-center shrink-0">
                   <AlertCircle className="w-5 h-5" />
                 </div>
@@ -219,6 +250,8 @@ export default function RecognizePage() {
                         : t.document.recognizeCompleted
                       : isFailed
                       ? t.document.recognizeFailed
+                      : isCancelled
+                      ? t.document.recognizeCancelled
                       : t.document.recognizingProgress}
                   </span>
                 </h1>
@@ -241,15 +274,16 @@ export default function RecognizePage() {
               </Button>
             )}
 
-            {isFailed && (
+            {isRetryable && (
               <Button
                 variant="outline"
                 size="md"
                 className="self-start sm:self-auto shrink-0"
-                onClick={() => page?.id && startOrResumeJob(page.id)}
+                disabled={isStarting}
+                onClick={retryFailedLines}
               >
                 <RotateCw className="w-4 h-4 mr-1.5" />
-                <span>{t.common.retry}</span>
+                <span>{isCancelled ? t.document.restartRecognition : t.document.retryFailedLines}</span>
               </Button>
             )}
           </div>
@@ -330,7 +364,7 @@ export default function RecognizePage() {
                             geometry={region.geometry}
                           />
                         ) : (
-                          <span className="text-[10px] text-app-text-secondary">Скан</span>
+                          <span className="text-[10px] text-app-text-secondary">{t.document.scanLabel}</span>
                         )}
                       </div>
 
@@ -338,7 +372,7 @@ export default function RecognizePage() {
                       <div className="min-w-0 flex-1">
                         {isLineSuccess ? (
                           <p className="text-xs md:text-sm font-medium text-app-text leading-snug m-0 break-words font-sans">
-                            {res.rawText || <span className="text-app-text-secondary italic">Пустая строка</span>}
+                            {res.rawText || <span className="text-app-text-secondary italic">{t.document.emptyRecognizedLine}</span>}
                           </p>
                         ) : isLineFailed ? (
                           <p className="text-xs text-status-danger m-0">
@@ -396,6 +430,12 @@ export default function RecognizePage() {
           >
             ← {t.document.backToLines}
           </Link>
+
+          {job && ['queued', 'running', 'cancelling'].includes(job.status) && (
+            <Button variant="outline" size="md" onClick={cancelRecognition} disabled={job.status === 'cancelling'}>
+              {job.status === 'cancelling' ? t.document.cancellingRecognition : t.document.cancelRecognition}
+            </Button>
+          )}
 
           {isFinished && (
             <Button
