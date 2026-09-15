@@ -109,6 +109,10 @@ test('Recognition dispatch is durable and guards duplicate, failed, and cancelle
   assert.match(service, /attempt:\$\{attempt\}:batch/, 'each batch derives its key from the persisted attempt');
   assert.match(recognizer, /RECOGNIZER_INVALID_RESULT_SET/, 'missing or duplicate provider line ids are rejected');
   assert.match(recognizePage, /hasProgressChange/, 'the UI does not refetch all line results when job progress is unchanged');
+  assert.match(service, /Promise\.all\(\[documentQuery, latestRevisionQuery\]\)/, 'document and revision lookup share one Supabase round-trip');
+  assert.match(service, /Revision confirmation, region loading and the idempotency check are/, 'job preflight requests run together');
+  assert.match(service, /The fast worker is scheduled only after this method returns/, 'outbox persistence completes before the fast worker starts');
+  assert.match(service, /\[ocr:start-timing\]/, 'job-start timing is logged without OCR text or secrets');
   assert.match(config, /RECOGNITION_BATCH_SIZE.*default\(4\)/, 'default OCR provider batches contain four lines');
   assert.match(config, /RECOGNITION_BATCH_CONCURRENCY.*default\(2\)/, 'at most two OCR provider batches run in parallel');
   assert.match(service, /pendingResults = activeBatches\.map/, 'both provider requests are started before the first result is awaited');

@@ -136,10 +136,10 @@ export interface LineResultDto {
   readingOrder?: number;
   geometry?: RegionGeometry;
   editedText?: string;
+  editVersion?: number;
 }
 
 export interface RecognitionJobResponse {
   job: JobDto;
   alreadyRunning: boolean;
 }
-

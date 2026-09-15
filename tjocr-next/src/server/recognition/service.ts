@@ -66,6 +66,18 @@ export class RecognitionJobService {
   ): Promise<{ job: JobDto; alreadyRunning: boolean }> {
     RecognitionJobService.assertWorkerConfiguration();
     const db = client || createAdminSupabaseClient();
+    const startedAt = Date.now();
+    let phaseStartedAt = startedAt;
+    const logStartTiming = (phase: string) => {
+      const now = Date.now();
+      console.info('[ocr:start-timing]', {
+        pageId,
+        phase,
+        phaseMs: now - phaseStartedAt,
+        elapsedMs: now - startedAt,
+      });
+      phaseStartedAt = now;
+    };
 
     // 1. Verify page ownership
     const { data: page, error: pageError } = await db
@@ -77,30 +89,37 @@ export class RecognitionJobService {
     if (pageError || !page) {
       throw new HttpError('Страница не найдена.', 'PAGE_NOT_FOUND', 404, false);
     }
+    logStartTiming('page_loaded');
 
-    const { data: document, error: docError } = await db
+    // Both lookups only depend on pageId/page.document_id. Running them as one
+    // round-trip saves an entire Supabase request on every OCR start.
+    const documentQuery = db
       .from('documents')
       .select('id, owner_id, state')
       .eq('id', page.document_id)
       .single();
+
+    const latestRevisionQuery = revisionId
+      ? Promise.resolve({ data: null })
+      : db
+          .from('region_revisions')
+          .select('id')
+          .eq('page_id', pageId)
+          .order('revision_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+    const [
+      { data: document, error: docError },
+      { data: latestRev },
+    ] = await Promise.all([documentQuery, latestRevisionQuery]);
 
     if (docError || !document || document.owner_id !== ownerId) {
       throw new HttpError('Доступ к документу ограничен.', 'DOCUMENT_FORBIDDEN', 403, false);
     }
 
     // 2. Resolve the target revision
-    let targetRevId = revisionId;
-    if (!targetRevId) {
-      const { data: latestRev } = await db
-        .from('region_revisions')
-        .select('id')
-        .eq('page_id', pageId)
-        .order('revision_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      targetRevId = latestRev?.id;
-    }
+    const targetRevId = revisionId ?? latestRev?.id;
 
     if (!targetRevId) {
       throw new HttpError(
@@ -113,19 +132,36 @@ export class RecognitionJobService {
 
     const idempotencyKey = `recognition:${pageId}:${targetRevId}`;
 
-    // Confirm the revision timestamp
-    await db
-      .from('region_revisions')
-      .update({ confirmed_at: new Date().toISOString() })
-      .eq('id', targetRevId);
-
-    // 3. Fetch active regions for this revision
-    const { data: regions, error: regionsError } = await db
-      .from('regions')
-      .select('id, reading_order, geometry, excluded')
-      .eq('revision_id', targetRevId)
-      .eq('excluded', false)
-      .order('reading_order', { ascending: true });
+    // Revision confirmation, region loading and the idempotency check are
+    // independent. They used to take three serial HTTP round-trips before a
+    // job could be inserted.
+    const [
+      ,
+      { data: regions, error: regionsError },
+      { data: activeJob },
+    ] = await Promise.all([
+      db
+        .from('region_revisions')
+        .update({ confirmed_at: new Date().toISOString() })
+        .eq('id', targetRevId),
+      db
+        .from('regions')
+        .select('id, reading_order, geometry, excluded')
+        .eq('revision_id', targetRevId)
+        .eq('excluded', false)
+        .order('reading_order', { ascending: true }),
+      db
+        .from('jobs')
+        .select('*')
+        .eq('document_id', page.document_id)
+        .eq('kind', 'recognition')
+        .eq('revision_id', targetRevId)
+        .in('status', ['queued', 'running'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    logStartTiming('job_preflight_complete');
 
     if (regionsError || !regions || regions.length === 0) {
       throw new HttpError(
@@ -135,18 +171,6 @@ export class RecognitionJobService {
         false,
       );
     }
-
-    // 4. Check for active recognition job (idempotency safeguard)
-    const { data: activeJob } = await db
-      .from('jobs')
-      .select('*')
-      .eq('document_id', page.document_id)
-      .eq('kind', 'recognition')
-      .eq('revision_id', targetRevId)
-      .in('status', ['queued', 'running'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
 
     if (activeJob) {
       return {
@@ -222,25 +246,28 @@ export class RecognitionJobService {
         true,
       );
     }
+    logStartTiming('job_inserted');
 
-    // 6. Create outbox record
-    await db.from('job_outbox').insert({
-      job_id: newJob.id,
-      dispatch_state: 'pending',
-      next_attempt_at: new Date(Date.now() + FAST_PATH_RECOVERY_DELAY_MS).toISOString(),
-      payload: {
-        pageId,
-        documentId: page.document_id,
-        revisionId: targetRevId,
-        lineCount: regions.length,
-      },
-    });
-
-    // 7. Update document state
-    await db
-      .from('documents')
-      .update({ state: 'recognizing', updated_at: new Date().toISOString() })
-      .eq('id', page.document_id);
+    // The fast worker is scheduled only after this method returns, so these
+    // independent writes can safely share one final network round-trip.
+    await Promise.all([
+      db.from('job_outbox').insert({
+        job_id: newJob.id,
+        dispatch_state: 'pending',
+        next_attempt_at: new Date(Date.now() + FAST_PATH_RECOVERY_DELAY_MS).toISOString(),
+        payload: {
+          pageId,
+          documentId: page.document_id,
+          revisionId: targetRevId,
+          lineCount: regions.length,
+        },
+      }),
+      db
+        .from('documents')
+        .update({ state: 'recognizing', updated_at: new Date().toISOString() })
+        .eq('id', page.document_id),
+    ]);
+    logStartTiming('job_ready');
 
     const jobDto: JobDto = {
       id: newJob.id,
@@ -796,6 +823,7 @@ export class RecognitionJobService {
           readingOrder: region?.reading_order ?? 0,
           geometry: region?.geometry,
           editedText: textEdit?.edited_text,
+          editVersion: textEdit?.version,
         };
       })
       .sort((a, b) => (a.readingOrder ?? 0) - (b.readingOrder ?? 0));
