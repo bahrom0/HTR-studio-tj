@@ -24,7 +24,7 @@ export function LandingPage() {
             </Link>
             <a className="text-action" href="#process">
               {t.landing.secondaryAction}
-              <span aria-hidden="true">↓</span>
+              {/* <span aria-hidden="true">↓</span> */}
             </a>
           </div>
         </div>

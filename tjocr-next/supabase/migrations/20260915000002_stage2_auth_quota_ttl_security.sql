@@ -1,4 +1,4 @@
--- TJOCR Next — Stage 2: accounts, quotas, retention and request protection
+-- TJOCR Next - Stage 2: accounts, quotas, retention and request protection
 -- Apply after 20260914000001_initial_schema.sql.
 --
 -- The public RPCs are deliberately small wrappers. The quota and rate-limit

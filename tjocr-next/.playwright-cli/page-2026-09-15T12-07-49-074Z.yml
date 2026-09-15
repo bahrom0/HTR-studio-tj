@@ -1,0 +1,8 @@
+- generic [active] [ref=e1]:
+  - generic [aria-hidden]:
+    - generic:
+      - progressbar
+  - link "Перейти к содержимому" [ref=e2] [cursor=pointer]:
+    - /url: "#main-content"
+  - main [ref=e3]:
+    - status "Загрузка..." [ref=e4]

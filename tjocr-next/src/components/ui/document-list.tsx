@@ -53,7 +53,7 @@ export function DocumentList({
     return (
       <div className="empty-state empty-state--animated">
         <div className="empty-state__mark" aria-hidden="true">
-          —
+          -
         </div>
         <p>{emptyLabel}</p>
         <Link className="text-action text-action--underlined" href={emptyHref}>
