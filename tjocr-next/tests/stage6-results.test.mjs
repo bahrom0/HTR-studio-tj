@@ -28,7 +28,10 @@ test('Stage 6 exports the chosen text and preserves unrecognized line gaps', () 
   assert.match(exportRoute, /Packer\.toBuffer/, 'DOCX is generated as an actual Office document');
   assert.match(resultPage, /setTimeout\([\s\S]*650/, 'text updates autosave after a short debounce');
   assert.match(resultPage, /resultConflict/, 'the result screen gives a recovery path for version conflicts');
-  assert.match(resultPage, /LineCropPreview/, 'selecting a text line displays its corresponding image crop');
+  assert.match(resultPage, /LineOverlay/, 'selecting a text line highlights its corresponding position on the full page');
+  assert.match(resultPage, /export-layout/, 'download first prepares a separate visual layout plan');
+  assert.match(resultPage, /ExportDialog/, 'download opens a final-text preview dialog');
+  assert.match(exportRoute, /normalizeExportLayout/, 'the server validates layout metadata before generating a file');
 });
 
 test('RU and TG dictionaries maintain contract parity including Stage 6 result keys', () => {
@@ -39,6 +42,7 @@ test('RU and TG dictionaries maintain contract parity including Stage 6 result k
     'resultCropTitle', 'resultTextLabel', 'resultEditHint', 'resultSaving',
     'resultSaved', 'resultSaveFailed', 'resultConflict', 'resultUseServer',
     'resultSaveMine', 'resultMissing', 'exportPartialNotice', 'exportTxt', 'exportDocx',
+    'exportPreviewTitle', 'exportPreparing', 'exportReady', 'exportDownload', 'exportSavePending',
   ];
 
   for (const key of keys) {
