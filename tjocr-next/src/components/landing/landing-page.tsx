@@ -2,18 +2,16 @@
 
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-import { useState } from 'react';
 import { useLocale } from '@/components/app-shell';
 
 export function LandingPage() {
   const { dictionary: t } = useLocale();
-  const [selectedLine, setSelectedLine] = useState(0);
-  const lines = t.landing.previewLines;
 
   return (
     <div className="landing-page">
       <section className="landing-hero page-width" aria-labelledby="landing-title">
         <div className="landing-copy">
+          <p className="eyebrow landing-eyebrow">{t.landing.kicker}</p>
           <h1 id="landing-title">{t.landing.title}</h1>
           <p className="landing-description">{t.landing.description}</p>
           <div className="landing-actions">
@@ -28,37 +26,13 @@ export function LandingPage() {
           </div>
         </div>
 
-        <figure className="sample-preview">
-          <div className="sample-preview__header">
-            <span className="sample-preview__label">
-              <span className="status-dot status-dot--success" aria-hidden="true" />
-              {t.landing.previewLabel}
-            </span>
+        <aside className="landing-principle" aria-label={t.landing.principleTitle}>
+          <p className="landing-principle__number" aria-hidden="true">01</p>
+          <div>
+            <h2>{t.landing.principleTitle}</h2>
+            <p>{t.landing.principleDescription}</p>
           </div>
-          <div className="sample-preview__body">
-            <div className="sample-paper" role="listbox" aria-label={t.landing.previewLinesLabel}>
-              {lines.map((line, index) => (
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={selectedLine === index}
-                  className={selectedLine === index ? 'sample-line sample-line--selected' : 'sample-line'}
-                  key={line}
-                  onClick={() => setSelectedLine(index)}
-                >
-                  <span className="sample-line__number">{String(index + 1).padStart(2, '0')}</span>
-                  <span>{line}</span>
-                </button>
-              ))}
-            </div>
-            <div className="sample-result">
-              <p className="sample-result__eyebrow">{t.landing.previewResultLabel}</p>
-              <p className="sample-result__text">{lines[selectedLine]}</p>
-              <p className="sample-result__caption">{t.landing.previewCaption}</p>
-            </div>
-          </div>
-          <figcaption>{t.landing.previewNote}</figcaption>
-        </figure>
+        </aside>
       </section>
 
       <section className="process-section page-width" id="process" aria-labelledby="process-title">
