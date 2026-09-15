@@ -19,7 +19,8 @@ export class ExportLayoutService {
   static async analyse(documentId: string, ownerId: string, db: SupabaseClient): Promise<ExportLayoutItem[]> {
     const config = getServerConfig();
     const modelId = config.RECOGNIZER_MODEL_ID || config.OCR_MODEL_ID;
-    if (!config.OCR_API_KEY || !modelId) {
+    const baseUrl = config.OCR_API_BASE_URL;
+    if (!config.OCR_API_KEY || !modelId || !baseUrl) {
       throw new HttpError('Сервис подготовки экспорта не настроен.', 'EXPORT_LAYOUT_CONFIGURATION_MISSING', 503, false);
     }
     const results = await RecognitionJobService.getLineResults(documentId, ownerId, db);
@@ -52,7 +53,7 @@ export class ExportLayoutService {
       'Return exactly one object for every index. The first item must use separatorBefore="none".',
       `Regions: ${JSON.stringify(sources)}`,
     ].join(' ');
-    const endpoint = `${config.OCR_API_BASE_URL.replace(/\/+$/, '')}/chat/completions`;
+    const endpoint = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
     const startedAt = performance.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), Math.min(config.OCR_REQUEST_TIMEOUT_MS, 30_000));
@@ -63,7 +64,7 @@ export class ExportLayoutService {
         headers: { Authorization: `Bearer ${config.OCR_API_KEY}`, 'Content-Type': 'application/json', 'HTTP-Referer': config.NEXT_PUBLIC_APP_URL, 'X-Title': 'Tajik HTR Studio' },
         body: JSON.stringify({
           model: modelId, temperature: 0, max_tokens: Math.min(1024, Math.max(256, 100 + sources.length * 18)), reasoning: { effort: 'low' },
-          ...(new URL(config.OCR_API_BASE_URL).hostname.endsWith('openrouter.ai') ? { provider: {
+          ...(new URL(baseUrl).hostname.endsWith('openrouter.ai') ? { provider: {
             order: [config.OPENROUTER_OCR_PROVIDER], only: [config.OPENROUTER_OCR_PROVIDER], allow_fallbacks: false, sort: { by: 'latency' },
             preferred_max_latency: { p50: config.OPENROUTER_PREFERRED_MAX_LATENCY_SECONDS }, preferred_min_throughput: { p50: config.OPENROUTER_PREFERRED_MIN_THROUGHPUT },
           } } : {}),
