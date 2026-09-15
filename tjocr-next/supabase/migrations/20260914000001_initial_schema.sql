@@ -1,5 +1,5 @@
 -- ==============================================================================
--- TJOCR Next — Clean Slate Initial Schema & RLS Policies
+-- TJOCR Next - Clean Slate Initial Schema & RLS Policies
 -- ==============================================================================
 -- Migration: 20260914000001_initial_schema.sql
 -- Полная очистка старых таблиц и создание новой схемы с RLS и приватным Storage
