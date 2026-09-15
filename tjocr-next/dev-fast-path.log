@@ -1,0 +1,136 @@
+
+> tjocr-next@0.1.0 dev
+> node scripts/run-server.mjs dev -p 3000
+
+workflows build complete (4 steps, 1 workflow, time 19ms)
+workflows build complete (4 steps, 1 workflow, time 19ms)
+   ▲ Next.js 15.5.25
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.56.1:3000
+   - Environments: .env.local
+   - Experiments (use with caution):
+     · cpus: 1
+
+ ✓ Starting...
+ ✓ Ready in 3.3s
+ ✓ Compiled /middleware in 279ms (170 modules)
+ ○ Compiling / ...
+ ✓ Compiled / in 3.3s (657 modules)
+ ✓ Compiled in 507ms (261 modules)
+ GET / 200 in 3839ms
+ ○ Compiling /api/v1/pages/[id]/recognition-jobs ...
+ ✓ Compiled /api/v1/pages/[id]/recognition-jobs in 1823ms (1492 modules)
+ GET /api/v1/pages/00000000-0000-0000-0000-000000000000/recognition-jobs 405 in 4106ms
+ ✓ Compiled /app/documents/[id]/recognize in 481ms (676 modules)
+ GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/recognize 200 in 1411ms
+ ✓ Compiled /api/v1/documents/[id] in 476ms (772 modules)
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867 200 in 4924ms
+ ○ Compiling /api/v1/pages/[id]/recognition-jobs ...
+ ✓ Compiled /api/v1/pages/[id]/recognition-jobs in 618ms (1529 modules)
+ GET /api/v1/pages/1680744e-4802-4d34-81f6-b068b4344508/regions 200 in 4877ms
+ POST /api/v1/pages/1680744e-4802-4d34-81f6-b068b4344508/recognition-jobs 202 in 5054ms
+ ✓ Compiled /api/v1/jobs/[id] in 479ms (1532 modules)
+ GET /api/v1/jobs/31d2a976-7740-4acb-a2c7-2a672fa8edeb 200 in 1917ms
+ ✓ Compiled /api/v1/documents/[id]/line-results in 478ms (1534 modules)
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867/line-results 200 in 2935ms
+ ○ Compiling /app/documents/[id]/lines ...
+ ✓ Compiled /app/documents/[id]/lines in 805ms (1573 modules)
+ GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/lines 200 in 1782ms
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867 200 in 2095ms
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867 200 in 2507ms
+ GET /api/v1/pages/1680744e-4802-4d34-81f6-b068b4344508/regions 200 in 1937ms
+ GET /api/v1/pages/1680744e-4802-4d34-81f6-b068b4344508/regions 200 in 2634ms
+ PUT /api/v1/pages/1680744e-4802-4d34-81f6-b068b4344508/regions 200 in 3486ms
+ GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/recognize 200 in 57ms
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867 200 in 2506ms
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867 200 in 2542ms
+ GET /api/v1/pages/1680744e-4802-4d34-81f6-b068b4344508/regions 200 in 2296ms
+ GET /api/v1/pages/1680744e-4802-4d34-81f6-b068b4344508/regions 200 in 2379ms
+ POST /api/v1/pages/1680744e-4802-4d34-81f6-b068b4344508/recognition-jobs 202 in 4286ms
+ ○ Compiling /.well-known/workflow/v1/flow ...
+ ✓ Compiled /api/v1/jobs/[id] in 1741ms (1588 modules)
+ POST /.well-known/workflow/v1/flow 200 in 21683ms
+ GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/recognize 200 in 171ms
+ GET /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9 200 in 21591ms
+ ○ Compiling /.well-known/workflow/v1/step ...
+ ✓ Compiled /.well-known/workflow/v1/step in 589ms (1577 modules)
+ ✓ Compiled in 902ms (1591 modules)
+ GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/recognize 200 in 129ms
+ POST /.well-known/workflow/v1/step 200 in 17136ms
+ GET /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9 200 in 1295ms
+ POST /.well-known/workflow/v1/flow 200 in 23601ms
+ GET /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9 200 in 792ms
+ ✓ Compiled /api/v1/documents/[id]/line-results in 428ms (1286 modules)
+[ocr:openrouter] {
+  model: 'google/gemini-3.8-flash',
+  regions: 1,
+  responseMs: 1775,
+  generationId: 'gen-1789469326-pKmJVkjaHZlwjnUe82cI',
+  provider: 'Google AI Studio',
+  promptTokens: 1252,
+  completionTokens: 19,
+  reasoningTokens: null,
+  cachedTokens: null
+}
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867/line-results 200 in 2267ms
+ GET /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9 200 in 792ms
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867/line-results 200 in 1557ms
+ GET /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9 200 in 797ms
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867/line-results 200 in 1527ms
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867/line-results 200 in 1559ms
+ ○ Compiling /api/v1/jobs/[id]/retry ...
+ ✓ Compiled /api/v1/jobs/[id]/retry in 991ms (1579 modules)
+ GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/recognize 200 in 164ms
+ ✓ Compiled /.well-known/workflow/v1/flow in 248ms (1284 modules)
+ POST /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9/retry 200 in 17575ms
+ POST /.well-known/workflow/v1/flow 200 in 10178ms
+ ✓ Compiled /.well-known/workflow/v1/step in 301ms (1287 modules)
+   Reload env: .env.local
+ ○ Compiling /api/v1/jobs/[id] ...
+ ✓ Compiled /api/v1/jobs/[id] in 1035ms (1745 modules)
+ GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/recognize 200 in 119ms
+   Reload env: .env.local
+ ✓ Compiled in 514ms (1745 modules)
+ GET /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9 200 in 3029ms
+ GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/recognize 200 in 125ms
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867/line-results 200 in 3791ms
+   Reload env: .env.local
+ GET /api/v1/documents/223111ea-503d-4f24-b5f2-ead6e9681867/line-results 200 in 1820ms
+ ✓ Compiled in 1164ms (1745 modules)
+[TJOCR API] Error: [Config Error] Ошибки конфигурации окружения: RECOGNITION_BATCH_CONCURRENCY: Number must be less than or equal to 2
+    at getServerConfig (src\server\config.ts:96:11)
+    at createServerSupabaseClient (src\server\supabase\server.ts:7:33)
+    at async GET (src\app\api\v1\jobs\[id]\route.ts:13:22)
+  94 |   if (!result.success) {
+  95 |     const missing = result.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join(', ');
+> 96 |     throw new Error(`[Config Error] Ошибки конфигурации окружения: ${missing}`);
+     |           ^
+  97 |   }
+  98 |
+  99 |   parsedConfig = result.data;
+ GET /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9 500 in 851ms
+ GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/recognize 200 in 106ms
+[ocr:openrouter] {
+  model: 'google/gemini-3.8-flash',
+  regions: 4,
+  responseMs: 4576,
+  generationId: 'gen-1789469459-eLBIeUis4DlklBuwoz9V',
+  provider: 'Google AI Studio',
+  promptTokens: 4413,
+  completionTokens: 48,
+  reasoningTokens: null,
+  cachedTokens: null
+}
+[ocr:openrouter] {
+  model: 'google/gemini-3.8-flash',
+  regions: 4,
+  responseMs: 5438,
+  generationId: 'gen-1789469460-x5UGMD4hJe7QVG0FBQIv',
+  provider: 'Google AI Studio',
+  promptTokens: 4430,
+  completionTokens: 54,
+  reasoningTokens: null,
+  cachedTokens: null
+}
+ POST /.well-known/workflow/v1/step 200 in 21704ms
+[?25h
