@@ -61,8 +61,8 @@ test('image normalizer contract and Sharp pipeline functions as specified', asyn
   assert.match(source, /rotate\(/);
 });
 
-test('line detector coordinate conversion and boundary enforcement logic', async () => {
-  // Test coordinate conversion math matching detector.ts
+test('line detection coordinate conversion and boundary enforcement logic', async () => {
+  // Test coordinate conversion math matching the local inference adapter.
   const page = { width: 1000, height: 2000 };
   const rawBox = [100, 50, 200, 850]; // [ymin, xmin, ymax, xmax] in 0..1000
 
@@ -79,15 +79,13 @@ test('line detector coordinate conversion and boundary enforcement logic', async
   assert.equal(width, 800);
   assert.equal(height, 200);
 
-  // Read detector.ts to verify constraints
-  const detectorSource = await read('src/server/detection/detector.ts');
-  assert.match(detectorSource, /RemoteLineDetector/);
-  assert.match(detectorSource, /DETECTION_INVALID_COORDINATES/);
-  assert.match(detectorSource, /DETECTION_DEGENERATE_BOX/);
-  assert.match(detectorSource, /DETECTION_LINE_LIMIT_EXCEEDED/);
-  assert.match(detectorSource, /DETECTION_UPSTREAM_ERROR/);
-  // Must NOT contain old model name
-  assert.doesNotMatch(detectorSource, /gemini-2\.5|gemini-1\.5|trocr-base/i);
+  const detectorSource = await read('src/ocr/adapters/local-inference-adapter.ts');
+  assert.match(detectorSource, /detectLines/);
+  assert.match(detectorSource, /OCR_INVALID_COORDINATES/);
+  assert.match(detectorSource, /OCR_DEGENERATE_BOX/);
+  assert.match(detectorSource, /OCR_LINE_LIMIT_EXCEEDED/);
+  // Model identifiers must come from server configuration, never source literals.
+  assert.doesNotMatch(detectorSource, /model:\s*['"][^'"]+['"]/i);
 });
 
 test('stage 3 route handlers and screens are present and conform to security standards', async () => {

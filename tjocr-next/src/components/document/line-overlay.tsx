@@ -7,6 +7,8 @@ export interface LineOverlayProps {
   imageWidth: number;
   imageHeight: number;
   regions: readonly RegionDto[];
+  regionTexts?: Readonly<Record<string, string>>;
+  emptyText?: string;
   selectedRegionId?: string | null;
   onSelectRegion?: (regionId: string) => void;
   className?: string;
@@ -17,14 +19,19 @@ export const LineOverlay: React.FC<LineOverlayProps> = ({
   imageWidth,
   imageHeight,
   regions,
+  regionTexts,
+  emptyText = '—',
   selectedRegionId,
   onSelectRegion,
   className = '',
 }) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [activePreviewId, setActivePreviewId] = useState<string | null>(null);
 
   const safeWidth = imageWidth > 0 ? imageWidth : 1000;
   const safeHeight = imageHeight > 0 ? imageHeight : 1000;
+  const activeRegion = activePreviewId ? regions.find((region) => region.id === activePreviewId) : null;
+  const activeText = activeRegion ? regionTexts?.[activeRegion.id]?.trim() || emptyText : '';
 
   return (
     <div
@@ -65,10 +72,13 @@ export const LineOverlay: React.FC<LineOverlayProps> = ({
           return (
             <g
               key={region.id}
-              className="cursor-pointer transition-colors"
+              className="line-overlay__region cursor-pointer transition-colors"
               onMouseEnter={() => setHoveredId(region.id)}
               onMouseLeave={() => setHoveredId(null)}
-              onClick={() => onSelectRegion?.(region.id)}
+              onClick={() => {
+                setActivePreviewId((current) => current === region.id ? null : region.id);
+                onSelectRegion?.(region.id);
+              }}
             >
               <rect
                 x={x}
@@ -104,6 +114,13 @@ export const LineOverlay: React.FC<LineOverlayProps> = ({
           );
         })}
       </svg>
+
+      {activeRegion && (
+        <div key={activeRegion.id} className="line-overlay__mobile-callout" role="status" aria-live="polite">
+          <span className="line-overlay__mobile-callout-number">{activeRegion.readingOrder + 1}</span>
+          <p>{activeText}</p>
+        </div>
+      )}
     </div>
   );
 };

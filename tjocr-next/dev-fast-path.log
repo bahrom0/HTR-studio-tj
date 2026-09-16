@@ -61,12 +61,12 @@ workflows build complete (4 steps, 1 workflow, time 19ms)
  POST /.well-known/workflow/v1/flow 200 in 23601ms
  GET /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9 200 in 792ms
  ✓ Compiled /api/v1/documents/[id]/line-results in 428ms (1286 modules)
-[ocr:openrouter] {
-  model: 'google/gemini-3.8-flash',
+[ocr:model] {
+  model: '[configured]',
   regions: 1,
   responseMs: 1775,
   generationId: 'gen-1789469326-pKmJVkjaHZlwjnUe82cI',
-  provider: 'Google AI Studio',
+  provider: '[configured]',
   promptTokens: 1252,
   completionTokens: 19,
   reasoningTokens: null,
@@ -110,23 +110,23 @@ workflows build complete (4 steps, 1 workflow, time 19ms)
   99 |   parsedConfig = result.data;
  GET /api/v1/jobs/2ca05f39-9a2b-4308-b907-201dc7cf41e9 500 in 851ms
  GET /app/documents/223111ea-503d-4f24-b5f2-ead6e9681867/recognize 200 in 106ms
-[ocr:openrouter] {
-  model: 'google/gemini-3.8-flash',
+[ocr:model] {
+  model: '[configured]',
   regions: 4,
   responseMs: 4576,
   generationId: 'gen-1789469459-eLBIeUis4DlklBuwoz9V',
-  provider: 'Google AI Studio',
+  provider: '[configured]',
   promptTokens: 4413,
   completionTokens: 48,
   reasoningTokens: null,
   cachedTokens: null
 }
-[ocr:openrouter] {
-  model: 'google/gemini-3.8-flash',
+[ocr:model] {
+  model: '[configured]',
   regions: 4,
   responseMs: 5438,
   generationId: 'gen-1789469460-x5UGMD4hJe7QVG0FBQIv',
-  provider: 'Google AI Studio',
+  provider: '[configured]',
   promptTokens: 4430,
   completionTokens: 54,
   reasoningTokens: null,

@@ -61,7 +61,8 @@ tjocr-next/
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - публичный anon-ключ.
    - `SUPABASE_SERVICE_ROLE_KEY` - приватный ключ сервисной роли (только для сервера).
    - `SUPABASE_STORAGE_BUCKET` - имя бакета (например, `htr-uploads`).
-   - `OCR_API_BASE_URL`, `OCR_API_KEY`, `OCR_MODEL_ID` - конфигурация провайдера OCR.
+   - `OCR_BACKEND`, `OCR_MODEL`, `OCR_RUNTIME_CONFIG` — конфигурация Tajik TrOCR Runtime.
+   - `OCR_PROVIDER_*` — внутренние серверные параметры implementation adapter; они не попадают в клиент, API-ответы или health endpoint.
 
 ---
 

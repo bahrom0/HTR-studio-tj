@@ -4,7 +4,7 @@ import { createAdminSupabaseClient, hasSupabaseServerKey } from '@/server/supaba
 import { getServerConfig } from '@/server/config';
 import { JobDto, JobStatus, LineResultDto } from '@/domain/types';
 import { HttpError } from '@/server/security/request';
-import { RemoteTextRecognizer, CropInput, RecognizedLine } from './recognizer';
+import { getOCRPipeline, type CropInput, type RecognizedLine } from '@/ocr';
 
 // A fast worker has two minutes to finish before the durable reconciler is
 // permitted to claim the same persisted job after an interrupted process.
@@ -43,14 +43,7 @@ export class RecognitionJobService {
         false,
       );
     }
-    if (!config.OCR_API_KEY || !(config.RECOGNIZER_MODEL_ID || config.OCR_MODEL_ID)) {
-      throw new HttpError(
-        'Сервер распознавания не настроен: отсутствует ключ или модель OCR.',
-        'RECOGNIZER_CONFIGURATION_MISSING',
-        503,
-        false,
-      );
-    }
+    getOCRPipeline().assertConfiguration();
     return config;
   }
 
@@ -348,7 +341,7 @@ export class RecognitionJobService {
       }
 
       // Claim the queued job exactly once. A second dispatch returns the
-      // current state instead of sending the same paid batch to the provider.
+      // current state instead of sending the same paid batch to the runtime.
       const claimCutoff = new Date(Date.now() - FAST_PATH_RECOVERY_DELAY_MS).toISOString();
       let claimRequest = db
         .from('jobs')
@@ -451,24 +444,9 @@ export class RecognitionJobService {
         throw new HttpError('Нет строк, доступных для повторного распознавания.', 'NO_RETRYABLE_REGIONS', 409, false);
       }
 
-      // 3. Instantiate Recognizer
-      const recognizerModelId = config.RECOGNIZER_MODEL_ID || config.OCR_MODEL_ID || '';
-      const recognizer = new RemoteTextRecognizer(
-        config.OCR_API_BASE_URL || 'https://openrouter.ai/api/v1',
-        config.OCR_API_KEY || '',
-        recognizerModelId,
-        config.NEXT_PUBLIC_APP_URL,
-        {
-          timeoutMs: config.OCR_REQUEST_TIMEOUT_MS,
-          maxOutputTokens: config.OCR_MAX_OUTPUT_TOKENS,
-          reasoningEffort: config.OCR_REASONING_EFFORT,
-          openRouterRouting: {
-            provider: config.OPENROUTER_OCR_PROVIDER,
-            maxLatencySeconds: config.OPENROUTER_PREFERRED_MAX_LATENCY_SECONDS,
-            minThroughput: config.OPENROUTER_PREFERRED_MIN_THROUGHPUT,
-          },
-        },
-      );
+      // 3. Initialize the application OCR runtime once for this job.
+      const ocrPipeline = getOCRPipeline();
+      await ocrPipeline.initialize();
 
       // 4. Crop each region into a buffer
       const cropItems: CropInput[] = await Promise.all(regionsToRecognize.map(async (reg) => {
@@ -492,11 +470,10 @@ export class RecognitionJobService {
       }));
       logTiming('crops_ready', { regions: cropItems.length });
 
-      // 5. Process four-line provider requests in bounded parallel pairs. Two
+      // 5. Process four-line runtime batches in bounded parallel pairs. Two
       // requests begin together; their combined result is written by one bulk
       // upsert, so live progress is based only on durable rows.
-      const batchSize = Math.max(1, config.RECOGNITION_BATCH_SIZE || 4);
-      const batchConcurrency = Math.max(1, Math.min(2, config.RECOGNITION_BATCH_CONCURRENCY || 2));
+      const { batchSize, batchConcurrency } = ocrPipeline.getExecutionConfig();
       const batches: CropInput[][] = [];
       for (let i = 0; i < cropItems.length; i += batchSize) {
         batches.push(cropItems.slice(i, i + batchSize));
@@ -543,7 +520,7 @@ export class RecognitionJobService {
         const activeBatches = batches.slice(groupStart, groupStart + batchConcurrency);
         // map starts both network calls before either result is awaited.
         const pendingResults = activeBatches.map((batch, offset) =>
-          recognizer
+          ocrPipeline
             .recognizeBatch(batch, `${jobId}:attempt:${attempt}:batch:${groupStart + offset}`)
             .catch((): RecognizedLine[] => batch.map((item) => ({
               lineIndex: item.lineIndex,
@@ -557,7 +534,7 @@ export class RecognitionJobService {
         // eight lines). Progress therefore advances by a real durable group,
         // while cancellation remains bounded to the active pair.
         const batchResults = (await Promise.all(pendingResults)).flat();
-        logTiming('provider_group_complete', {
+        logTiming('runtime_group_complete', {
           groupStart,
           requests: activeBatches.length,
           regions: batchResults.length,
@@ -575,7 +552,7 @@ export class RecognitionJobService {
         if (persistError) {
           throw new HttpError('Не удалось сохранить распознанные строки.', 'LINE_RESULT_PERSIST_FAILED', 503, true);
         }
-        logTiming('provider_group_persisted', { groupStart, regions: batchResults.length });
+        logTiming('runtime_group_persisted', { groupStart, regions: batchResults.length });
         completedCount += batchResults.filter((result) => result.status === 'succeeded').length;
         failedCount += batchResults.filter((result) => result.status === 'failed').length;
 
@@ -638,7 +615,6 @@ export class RecognitionJobService {
         updatedAt: new Date().toISOString(),
       };
     } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Ошибка при распознавании текста';
       logTiming('job_failed', { message: err instanceof Error ? err.name : 'unknown' });
       await db
         .from('jobs')
@@ -656,7 +632,7 @@ export class RecognitionJobService {
 
       throw err instanceof HttpError
         ? err
-        : new HttpError(errorMsg, 'RECOGNITION_EXECUTION_FAILED', 502, true);
+        : new HttpError('Recognition request failed.', 'OCR_RECOGNITION_FAILED', 502, true);
     }
   }
 
