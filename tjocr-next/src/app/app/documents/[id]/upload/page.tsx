@@ -23,6 +23,8 @@ type DocumentDetails = {
   page: {
     id: string;
     documentId: string;
+    sourceAssetId: string | null;
+    normalizedAssetId: string | null;
     width: number;
     height: number;
     imageRevision: number;
@@ -41,12 +43,22 @@ export default function DocumentUploadPage() {
   const [isRotating, setIsRotating] = useState(false);
   const [isStartingDetection, setIsStartingDetection] = useState(false);
   const [detectionError, setDetectionError] = useState<string | null>(null);
+  const [previewState, setPreviewState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   // File replacement state
   const [isReplacing, setIsReplacing] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadState, setUploadState] = useState<FileUploadState>('idle');
+
+  const previewUrl = details?.previewUrl || null;
+  const previewCacheKey = details?.page
+    ? `asset:${details.page.normalizedAssetId || details.page.sourceAssetId || details.page.id}:revision:${details.page.imageRevision}`
+    : undefined;
+
+  useEffect(() => {
+    setPreviewState(previewUrl ? 'loading' : 'error');
+  }, [previewUrl, previewCacheKey]);
 
   const fetchDocument = async () => {
     try {
@@ -69,6 +81,7 @@ export default function DocumentUploadPage() {
     if (!details || isRotating) return;
     setIsRotating(true);
     setDetectionError(null);
+    setPreviewState('loading');
 
     try {
       const res = await fetch(`/api/v1/documents/${details.document.id}`, {
@@ -88,6 +101,7 @@ export default function DocumentUploadPage() {
       await fetchDocument();
     } catch (err) {
       setDetectionError(err instanceof Error ? err.message : 'Ошибка при повороте');
+      setPreviewState('ready');
     } finally {
       setIsRotating(false);
     }
@@ -177,7 +191,7 @@ export default function DocumentUploadPage() {
     );
   }
 
-  const { document: doc, page, previewUrl } = details;
+  const { document: doc, page } = details;
   const hasUploadedImage = Boolean(previewUrl && page);
 
   return (
@@ -211,12 +225,28 @@ export default function DocumentUploadPage() {
           <div className="flex flex-col gap-6">
             {/* Image Preview Canvas */}
             <div className="relative rounded-md border border-border bg-surface p-3 sm:p-4 flex flex-col items-center justify-center">
-              <div className="max-h-[600px] w-full overflow-hidden rounded border border-border/50 bg-background flex items-center justify-center">
+              <div
+                className="relative flex min-h-[220px] w-full items-center justify-center overflow-hidden rounded border border-border/50 bg-background sm:min-h-[320px]"
+                aria-busy={previewState === 'loading'}
+              >
+                {previewState === 'loading' ? (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/90">
+                    <Status variant="loading">{t.common.loading}</Status>
+                  </div>
+                ) : null}
+                {previewState === 'error' ? (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center p-5 text-center">
+                    <Status variant="danger">{t.newDocument.uploadError}</Status>
+                  </div>
+                ) : null}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <CachedImage
                   src={previewUrl!}
+                  cacheKey={previewCacheKey}
                   alt={doc.title}
-                  className="max-h-[580px] w-auto max-w-full object-contain select-none"
+                  className={`max-h-[580px] w-auto max-w-full object-contain select-none transition-opacity duration-200 ${previewState === 'ready' ? 'opacity-100' : 'opacity-0'}`}
+                  onLoad={() => setPreviewState('ready')}
+                  onError={() => setPreviewState('error')}
                 />
               </div>
 

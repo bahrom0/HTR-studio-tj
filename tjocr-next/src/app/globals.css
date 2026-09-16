@@ -1743,6 +1743,14 @@ button {
   background: var(--color-background);
 }
 
+.line-overlay__region {
+  touch-action: manipulation;
+}
+
+.line-overlay__mobile-callout {
+  display: none;
+}
+
 .result-preview-empty {
   min-height: 240px;
   display: grid;
@@ -2041,6 +2049,172 @@ button {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 20px;
+}
+
+/* Result review and export dialog: these rules intentionally follow the
+ * desktop workspace styles above, so the mobile single-column layout wins. */
+@media (max-width: 767px) {
+  .result-screen {
+    width: min(100% - (var(--page-gutter) * 2), 1240px);
+    min-height: calc(100dvh - var(--site-header-height));
+    height: auto;
+    overflow: visible;
+    padding-top: 14px;
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+
+  .result-page-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .result-page-header h1 { font-size: 24px; }
+  .result-page-header p:not(.eyebrow) { display: none; }
+
+  .result-export-actions {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .result-export-actions .button {
+    min-width: 0;
+    min-height: 44px;
+    justify-content: center;
+    padding-inline: 8px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .result-workspace {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    gap: 12px;
+  }
+
+  .result-preview-pane {
+    position: static;
+    top: auto;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+  }
+
+  .result-page-preview {
+    height: auto;
+    min-height: 0;
+  }
+
+  .line-overlay__mobile-callout {
+    position: absolute;
+    z-index: 20;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    max-height: min(46%, 168px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 10px;
+    background: var(--color-background);
+    box-shadow: 0 8px 22px rgb(0 0 0 / 16%);
+    animation: line-overlay-callout-in 180ms ease-out both;
+  }
+
+  .line-overlay__mobile-callout-number {
+    display: grid;
+    width: 28px;
+    min-height: 28px;
+    place-items: center;
+    border-radius: 6px;
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .line-overlay__mobile-callout p {
+    min-width: 0;
+    margin: 1px 0;
+    color: var(--color-text);
+    font-size: 14px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .result-editor-pane {
+    min-height: min(460px, 52dvh);
+  }
+
+  .result-editor-list {
+    max-height: none;
+    min-height: 0;
+  }
+
+  .export-dialog {
+    width: calc(100% - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+
+  .export-dialog__surface {
+    max-height: inherit;
+    padding: 16px;
+  }
+
+  .export-dialog h2 { font-size: 18px; }
+
+  .export-preview {
+    margin-top: 16px;
+  }
+
+  .export-preview pre {
+    max-height: min(34dvh, 280px);
+    padding: 12px;
+    font-size: 12px;
+  }
+
+  .export-dialog__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .export-dialog__actions .button {
+    min-width: 0;
+    min-height: 44px;
+    justify-content: center;
+    padding-inline: 10px;
+  }
+
+  .export-dialog__actions .button:last-child,
+  .export-dialog__actions .button:only-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@keyframes line-overlay-callout-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes win11-indeterminate {

@@ -3,7 +3,7 @@ import { createAdminSupabaseClient } from '@/server/supabase/admin';
 import { getServerConfig } from '@/server/config';
 import { JobDto, JobStatus } from '@/domain/types';
 import { HttpError } from '@/server/security/request';
-import { RemoteLineDetector } from './detector';
+import { getOCRPipeline } from '@/ocr';
 
 export class DetectionJobService {
   /**
@@ -173,15 +173,7 @@ export class DetectionJobService {
       }
 
       const imageBuffer = Buffer.from(await blob.arrayBuffer());
-      const detectorModelId = config.DETECTOR_MODEL_ID || config.OCR_MODEL_ID || '';
-      const detector = new RemoteLineDetector(
-        config.OCR_API_BASE_URL || 'https://openrouter.ai/api/v1',
-        config.OCR_API_KEY || '',
-        detectorModelId,
-        config.NEXT_PUBLIC_APP_URL,
-      );
-
-      const lines = await detector.detect({
+      const lines = await getOCRPipeline().detectLines({
         imageBuffer,
         mimeType: asset.mime,
         width: page.width || 2048,

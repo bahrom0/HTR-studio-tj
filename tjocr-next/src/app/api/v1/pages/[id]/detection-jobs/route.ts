@@ -31,14 +31,14 @@ export async function POST(
           },
           { status: 202 },
         );
-      } catch (execError) {
+      } catch {
         // Return 202 with failed status so client can handle retry gracefully
         return jsonNoStore(
           {
             success: false,
             jobId: job.id,
             status: 'failed',
-            error: execError instanceof Error ? execError.message : 'Detection failed',
+            error: 'Recognition request failed.',
           },
           { status: 202 },
         );

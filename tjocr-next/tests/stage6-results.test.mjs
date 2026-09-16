@@ -14,9 +14,9 @@ test('Stage 6 keeps a versioned user edit separate from immutable OCR text', () 
   assert.match(editRoute, /assertSameOrigin/, 'text edits reject cross-site browser writes');
   assert.match(editRoute, /expectedVersion/, 'text edits use optimistic concurrency');
   assert.match(editRoute, /TEXT_EDIT_VERSION_CONFLICT/, 'a stale write is visible to the user as a conflict');
-  assert.match(editRoute, /raw_text/, 'the edit route reads the immutable provider output without overwriting it');
+  assert.match(editRoute, /raw_text/, 'the edit route reads the immutable runtime output without overwriting it');
   assert.match(service, /editedText: textEdit\?\.edited_text/, 'result reads expose saved user corrections separately');
-  assert.match(migration, /idx_text_edits_one_current_per_line_result/, 'one current version exists for each provider result');
+  assert.match(migration, /idx_text_edits_one_current_per_line_result/, 'one current version exists for each runtime result');
 });
 
 test('Stage 6 exports the chosen text and preserves unrecognized line gaps', () => {
